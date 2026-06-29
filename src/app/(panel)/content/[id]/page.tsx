@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { getT } from "@/lib/i18n-server";
 import SourceEditor from "./SourceEditor";
-import TranslationPanel from "./TranslationPanel";
+import MarketTranslations, { type MarketPanel } from "./MarketTranslations";
 import type { Content, ContentTranslation, Market } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,12 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
     ? targetMarkets
     : targetMarkets.filter((m) => m.id === profile?.market_id);
 
+  const panels: MarketPanel[] = visibleMarkets.map((m) => ({
+    market: m,
+    translation: tx.find((x) => x.market_id === m.id) ?? null,
+    canEdit: isAdmin || (role === "market_manager" && m.id === profile?.market_id),
+  }));
+
   return (
     <div>
       <div className="mb-4">
@@ -57,24 +63,9 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
           <SourceEditor content={content} editable={isAdmin} />
         </div>
 
-        {/* Çeviriler */}
-        <div className="space-y-6">
-          {visibleMarkets.map((m) => {
-            const t = tx.find((x) => x.market_id === m.id);
-            return (
-              <TranslationPanel
-                key={m.id}
-                market={m}
-                contentId={content.id}
-                translation={t ?? null}
-                canTranslate={isAdmin}
-                canEdit={isAdmin || (role === "market_manager" && m.id === profile?.market_id)}
-              />
-            );
-          })}
-          {visibleMarkets.length === 0 && (
-            <p className="text-sm text-ink-body">{t("tp.noMarket")}</p>
-          )}
+        {/* Çeviriler — pazar seçici + seçili panel */}
+        <div>
+          <MarketTranslations panels={panels} contentId={content.id} canTranslate={isAdmin} />
         </div>
       </div>
     </div>

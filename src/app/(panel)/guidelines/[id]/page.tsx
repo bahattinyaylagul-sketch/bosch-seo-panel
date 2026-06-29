@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { getT } from "@/lib/i18n-server";
 import GuidelineEditor from "../GuidelineEditor";
-import GuidelineTranslationPanel from "../GuidelineTranslationPanel";
+import GuidelineMarketTranslations, { type GuidelinePanel } from "../GuidelineMarketTranslations";
 import type { Guideline, GuidelineTranslation, Market } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,12 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
     ? targetMarkets
     : targetMarkets.filter((m) => m.id === profile?.market_id);
 
+  const panels: GuidelinePanel[] = visibleMarkets.map((m) => ({
+    market: m,
+    translation: tx.find((x) => x.market_id === m.id) ?? null,
+    canEdit: isAdmin || (role === "market_manager" && m.id === profile?.market_id),
+  }));
+
   return (
     <div>
       <div className="mb-4">
@@ -53,23 +59,8 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
           <GuidelineEditor guideline={guideline} editable={isAdmin} />
         </div>
 
-        <div className="space-y-6">
-          {visibleMarkets.map((m) => {
-            const gt_ = tx.find((x) => x.market_id === m.id);
-            return (
-              <GuidelineTranslationPanel
-                key={m.id}
-                market={m}
-                guidelineId={guideline.id}
-                translation={gt_ ?? null}
-                canTranslate={isAdmin}
-                canEdit={isAdmin || (role === "market_manager" && m.id === profile?.market_id)}
-              />
-            );
-          })}
-          {visibleMarkets.length === 0 && (
-            <p className="text-sm text-ink-body">{t("gl.noMarket")}</p>
-          )}
+        <div>
+          <GuidelineMarketTranslations panels={panels} guidelineId={guideline.id} canTranslate={isAdmin} />
         </div>
       </div>
     </div>

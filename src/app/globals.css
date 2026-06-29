@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #ffffff;
+  color: #525252;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Bosch supergraphic accent bar — header'ın en üstünde 4px şerit */
+.bosch-supergraphic {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    #18837e 0%,
+    #00884a 28%,
+    #007bc0 55%,
+    #ed0007 80%,
+    #9e2896 100%
+  );
+}
+
+/* Markdown gövdesi için sade tipografi */
+.prose-bosch h1 { font-size: 1.5rem; font-weight: 600; color: #000; margin: 1rem 0 0.5rem; }
+.prose-bosch h2 { font-size: 1.25rem; font-weight: 600; color: #000; margin: 1rem 0 0.5rem; }
+.prose-bosch h3 { font-size: 1.1rem; font-weight: 500; color: #000; margin: 0.75rem 0 0.5rem; }
+.prose-bosch p { margin: 0.5rem 0; line-height: 1.7; }
+.prose-bosch ul { list-style: disc; padding-left: 1.25rem; margin: 0.5rem 0; }
+.prose-bosch ol { list-style: decimal; padding-left: 1.25rem; margin: 0.5rem 0; }
+.prose-bosch code { background: #f5f5f5; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85em; }

@@ -1,10 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { translateDoc } from "@/lib/translate";
 import type { Guideline, Market } from "@/lib/types";
+
+export async function deleteGuideline(id: string) {
+  const profile = await getProfile();
+  if (profile?.role !== "admin") throw new Error("Yetkisiz");
+  const supabase = createClient();
+  const { error } = await supabase.from("guidelines").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/guidelines");
+  redirect("/guidelines");
+}
 
 export async function createGuideline(formData: FormData) {
   const profile = await getProfile();

@@ -1,10 +1,23 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { translateContent } from "@/lib/translate";
 import type { Content, ContentTranslation, Market } from "@/lib/types";
+
+// ---- İçeriği sil (admin) — çeviriler cascade ile silinir -----
+export async function deleteContent(id: string) {
+  const profile = await getProfile();
+  if (profile?.role !== "admin") throw new Error("Yetkisiz");
+  const supabase = createClient();
+  const { error } = await supabase.from("contents").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/content");
+  revalidatePath("/dashboard");
+  redirect("/content");
+}
 
 // ---- TR kaynak içerik oluştur (admin) -----------------------
 export async function createContent(formData: FormData) {

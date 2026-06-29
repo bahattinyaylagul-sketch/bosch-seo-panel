@@ -5,6 +5,7 @@ import { getProfile } from "@/lib/auth";
 import { getT } from "@/lib/i18n-server";
 import SourceEditor from "./SourceEditor";
 import MarketTranslations, { type MarketPanel } from "./MarketTranslations";
+import DeleteContentButton from "./DeleteContentButton";
 import type { Content, ContentTranslation, Market } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,10 +48,11 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-4 flex items-center justify-between">
         <Link href="/content" className="text-sm text-bosch-blue hover:underline">
           ← {t("nav.content")}
         </Link>
+        {isAdmin && <DeleteContentButton id={content.id} />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

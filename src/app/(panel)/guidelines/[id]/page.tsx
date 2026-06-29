@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
+import { getT } from "@/lib/i18n-server";
 import GuidelineEditor from "../GuidelineEditor";
 import GuidelineTranslationPanel from "../GuidelineTranslationPanel";
 import type { Guideline, GuidelineTranslation, Market } from "@/lib/types";
@@ -30,6 +31,7 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
 
   const isAdmin = profile?.role === "admin";
   const role = profile?.role ?? "viewer";
+  const t = getT();
   const visibleMarkets = isAdmin
     ? targetMarkets
     : targetMarkets.filter((m) => m.id === profile?.market_id);
@@ -38,7 +40,7 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
     <div>
       <div className="mb-4">
         <Link href="/guidelines" className="text-sm text-bosch-blue hover:underline">
-          ← Guideline
+          ← {t("nav.guidelines")}
         </Link>
       </div>
 
@@ -46,27 +48,27 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
         <div>
           <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
             <span className="inline-block rounded-bosch bg-bosch-red px-1.5 py-0.5 text-xs text-white">TR</span>
-            Kaynak doküman
+            {t("gl.source")}
           </h2>
           <GuidelineEditor guideline={guideline} editable={isAdmin} />
         </div>
 
         <div className="space-y-6">
           {visibleMarkets.map((m) => {
-            const t = tx.find((x) => x.market_id === m.id);
+            const gt_ = tx.find((x) => x.market_id === m.id);
             return (
               <GuidelineTranslationPanel
                 key={m.id}
                 market={m}
                 guidelineId={guideline.id}
-                translation={t ?? null}
+                translation={gt_ ?? null}
                 canTranslate={isAdmin}
                 canEdit={isAdmin || (role === "market_manager" && m.id === profile?.market_id)}
               />
             );
           })}
           {visibleMarkets.length === 0 && (
-            <p className="text-sm text-ink-body">Bu doküman için size atanmış bir pazar yok.</p>
+            <p className="text-sm text-ink-body">{t("gl.noMarket")}</p>
           )}
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui";
-import { EXEC_TYPE_LABELS_TR } from "@/lib/types";
+import { getT } from "@/lib/i18n-server";
 import type {
   Market,
   ContentTranslation,
@@ -66,12 +66,11 @@ export default async function DashboardPage() {
     return pct(all.filter((e) => e.status === "done").length, all.length);
   }
 
+  const t = getT();
+
   return (
     <div>
-      <PageHeader
-        title="Global dashboard"
-        description="Tüm pazarların ilerlemesi tek ekranda — kim nerede."
-      />
+      <PageHeader title={t("db.title")} description={t("db.desc")} />
 
       {/* Üst özet: pazar başına genel % */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -86,7 +85,7 @@ export default async function DashboardPage() {
                   {m.code} · {m.name}
                 </span>
                 {m.is_source && (
-                  <span className="text-xs rounded-bosch bg-bosch-red px-1.5 py-0.5 text-white">kaynak</span>
+                  <span className="text-xs rounded-bosch bg-bosch-red px-1.5 py-0.5 text-white">{t("db.source")}</span>
                 )}
               </div>
               <div className={`text-3xl font-semibold ${color}`}>{value}%</div>
@@ -99,16 +98,16 @@ export default async function DashboardPage() {
       </div>
 
       {/* Pazar × iş tipi matrisi */}
-      <h2 className="text-sm font-semibold text-ink mb-3">Pazar × iş tipi matrisi</h2>
+      <h2 className="text-sm font-semibold text-ink mb-3">{t("db.matrix")}</h2>
       <div className="border border-surface-border rounded-bosch overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-surface-muted text-ink-body">
             <tr>
-              <th className="text-left font-medium px-4 py-2.5">Pazar</th>
-              <th className="text-left font-medium px-4 py-2.5">İçerik</th>
-              {EXEC_TYPES.map((t) => (
-                <th key={t} className="text-left font-medium px-4 py-2.5">
-                  {EXEC_TYPE_LABELS_TR[t]}
+              <th className="text-left font-medium px-4 py-2.5">{t("db.colMarket")}</th>
+              <th className="text-left font-medium px-4 py-2.5">{t("db.colContent")}</th>
+              {EXEC_TYPES.map((ty) => (
+                <th key={ty} className="text-left font-medium px-4 py-2.5">
+                  {t(`execType.${ty}`)}
                 </th>
               ))}
             </tr>
@@ -120,9 +119,9 @@ export default async function DashboardPage() {
                 <td className="px-4 py-3">
                   <CellBar value={contentPct(m)} />
                 </td>
-                {EXEC_TYPES.map((t) => (
-                  <td key={t} className="px-4 py-3">
-                    <CellBar value={execPct(m, t)} />
+                {EXEC_TYPES.map((ty) => (
+                  <td key={ty} className="px-4 py-3">
+                    <CellBar value={execPct(m, ty)} />
                   </td>
                 ))}
               </tr>
@@ -130,9 +129,7 @@ export default async function DashboardPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-ink-body">
-        İçerik % = onaylanmış çeviri oranı · İş tipi % = tamamlanan iş oranı · “—” = ilgili iş yok.
-      </p>
+      <p className="mt-3 text-xs text-ink-body">{t("db.footnote")}</p>
     </div>
   );
 }

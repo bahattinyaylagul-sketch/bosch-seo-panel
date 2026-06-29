@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { translateForMarket, saveTranslation, approveTranslation } from "../actions";
-import { STATUS_LABELS_TR, type ContentTranslation, type Market } from "@/lib/types";
+import { useT } from "@/components/LangProvider";
+import { type ContentTranslation, type Market } from "@/lib/types";
 
 const inputCls =
   "w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue disabled:bg-surface-muted disabled:text-ink-body";
@@ -23,6 +24,7 @@ export default function TranslationPanel({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<"translate" | "save" | "approve" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export default function TranslationPanel({
           </span>
           {market.name}
         </h3>
-        <span className={`text-xs font-medium ${statusColor}`}>{STATUS_LABELS_TR[status]}</span>
+        <span className={`text-xs font-medium ${statusColor}`}>{t(`status.${status}`)}</span>
       </div>
 
       {canTranslate && (
@@ -101,7 +103,7 @@ export default function TranslationPanel({
           disabled={pending}
           className="mb-3 rounded-bosch border border-bosch-blue px-3 py-1.5 text-xs font-medium text-bosch-blue hover:bg-bosch-blue/10 transition-colors disabled:opacity-60"
         >
-          {busy === "translate" ? "Çevriliyor…" : isEmpty ? "Çevir" : "Yeniden çevir"}
+          {busy === "translate" ? t("btn.translating") : isEmpty ? t("btn.translate") : t("btn.retranslate")}
         </button>
       )}
 
@@ -113,24 +115,24 @@ export default function TranslationPanel({
 
       {isEmpty ? (
         <p className="text-xs text-ink-body">
-          Henüz çeviri yok. {canTranslate ? "“Çevir” ile başlat." : "Admin çeviri başlatınca görünür."}
+          {canTranslate ? t("tp.emptyAdmin") : t("tp.emptyOther")}
         </p>
       ) : (
         <form onSubmit={doSave} className="space-y-3">
           <div>
-            <label className={labelCls}>Başlık</label>
+            <label className={labelCls}>{t("field.title")}</label>
             <input name="title" defaultValue={translation?.title ?? ""} disabled={!canEdit} className={inputCls} />
           </div>
 
           {needsReview && (
             <p className="text-xs text-bosch-red bg-white border border-bosch-red/30 rounded-bosch px-3 py-1.5">
-              ⚠ Keyword ve slug lokal düzenleme gerektirir (arama hacmine göre kontrol edin).
+              {t("tp.needsReview")}
             </p>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Hedef keyword</label>
+              <label className={labelCls}>{t("field.keyword")}</label>
               <input
                 name="target_keyword"
                 defaultValue={translation?.target_keyword ?? ""}
@@ -139,7 +141,7 @@ export default function TranslationPanel({
               />
             </div>
             <div>
-              <label className={labelCls}>Slug</label>
+              <label className={labelCls}>{t("field.slug")}</label>
               <input
                 name="slug"
                 defaultValue={translation?.slug ?? ""}
@@ -150,11 +152,11 @@ export default function TranslationPanel({
           </div>
 
           <div>
-            <label className={labelCls}>Meta title</label>
+            <label className={labelCls}>{t("field.metaTitle")}</label>
             <input name="meta_title" defaultValue={translation?.meta_title ?? ""} disabled={!canEdit} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Meta description</label>
+            <label className={labelCls}>{t("field.metaDesc")}</label>
             <textarea
               name="meta_description"
               defaultValue={translation?.meta_description ?? ""}
@@ -164,7 +166,7 @@ export default function TranslationPanel({
             />
           </div>
           <div>
-            <label className={labelCls}>Gövde metni</label>
+            <label className={labelCls}>{t("field.body")}</label>
             <textarea
               name="body"
               defaultValue={translation?.body ?? ""}
@@ -181,7 +183,7 @@ export default function TranslationPanel({
                 disabled={pending}
                 className="rounded-bosch border border-surface-border bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-surface-muted transition-colors disabled:opacity-60"
               >
-                {busy === "save" ? "Kaydediliyor…" : "Düzenlemeyi kaydet"}
+                {busy === "save" ? t("btn.saving") : t("btn.saveEdit")}
               </button>
               <button
                 type="button"
@@ -189,7 +191,7 @@ export default function TranslationPanel({
                 disabled={pending || status === "approved"}
                 className="rounded-bosch bg-bosch-green px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {busy === "approve" ? "Onaylanıyor…" : status === "approved" ? "Onaylandı ✓" : "Onayla"}
+                {busy === "approve" ? t("btn.approving") : status === "approved" ? t("btn.approved") : t("btn.approve")}
               </button>
             </div>
           )}

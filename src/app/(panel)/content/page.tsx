@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { PageHeader, StatusBadge } from "@/components/ui";
+import { getT } from "@/lib/i18n-server";
 import NewContentButton from "./NewContentButton";
 import ContentFilters from "./ContentFilters";
 import type { Content, ContentTranslation, Market, TranslationStatus } from "@/lib/types";
@@ -53,12 +54,13 @@ export default async function ContentListPage({
   });
 
   const isAdmin = profile?.role === "admin";
+  const t = getT();
 
   return (
     <div>
       <PageHeader
-        title="İçerik kütüphanesi"
-        description="TR kaynak içerikler ve pazar bazında çeviri durumları."
+        title={t("content.title")}
+        description={t("content.desc")}
         action={isAdmin ? <NewContentButton /> : undefined}
       />
 
@@ -68,8 +70,8 @@ export default async function ContentListPage({
         <table className="w-full text-sm">
           <thead className="bg-surface-muted text-ink-body">
             <tr>
-              <th className="text-left font-medium px-4 py-2.5">Başlık</th>
-              <th className="text-left font-medium px-4 py-2.5">Keyword</th>
+              <th className="text-left font-medium px-4 py-2.5">{t("field.title")}</th>
+              <th className="text-left font-medium px-4 py-2.5">{t("content.colKeyword")}</th>
               {targetMarkets.map((m) => (
                 <th key={m.id} className="text-left font-medium px-4 py-2.5">
                   {m.code}
@@ -90,10 +92,10 @@ export default async function ContentListPage({
                   </td>
                   <td className="px-4 py-3 text-ink-body">{c.target_keyword}</td>
                   {targetMarkets.map((m) => {
-                    const t = ts.find((x) => x.market_id === m.id);
+                    const tr_ = ts.find((x) => x.market_id === m.id);
                     return (
                       <td key={m.id} className="px-4 py-3">
-                        {t ? <StatusBadge status={t.status} /> : <span className="text-xs text-ink-body">—</span>}
+                        {tr_ ? <StatusBadge status={tr_.status} label={t(`status.${tr_.status}`)} /> : <span className="text-xs text-ink-body">—</span>}
                       </td>
                     );
                   })}
@@ -103,7 +105,7 @@ export default async function ContentListPage({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={2 + targetMarkets.length} className="px-4 py-8 text-center text-ink-body">
-                  Kayıt yok.
+                  {t("content.empty")}
                 </td>
               </tr>
             )}

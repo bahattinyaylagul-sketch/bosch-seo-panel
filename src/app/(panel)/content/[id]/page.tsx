@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
+import { getT } from "@/lib/i18n-server";
 import SourceEditor from "./SourceEditor";
 import TranslationPanel from "./TranslationPanel";
 import type { Content, ContentTranslation, Market } from "@/lib/types";
@@ -31,6 +32,7 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
 
   const isAdmin = profile?.role === "admin";
   const role = profile?.role ?? "viewer";
+  const t = getT();
 
   // Hangi pazar panelleri gösterilecek?
   const visibleMarkets = isAdmin
@@ -41,7 +43,7 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
     <div>
       <div className="mb-4">
         <Link href="/content" className="text-sm text-bosch-blue hover:underline">
-          ← İçerik kütüphanesi
+          ← {t("nav.content")}
         </Link>
       </div>
 
@@ -50,7 +52,7 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
         <div>
           <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
             <span className="inline-block rounded-bosch bg-bosch-red px-1.5 py-0.5 text-xs text-white">TR</span>
-            Kaynak içerik
+            {t("content.source")}
           </h2>
           <SourceEditor content={content} editable={isAdmin} />
         </div>
@@ -71,7 +73,7 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
             );
           })}
           {visibleMarkets.length === 0 && (
-            <p className="text-sm text-ink-body">Bu içerik için size atanmış bir pazar yok.</p>
+            <p className="text-sm text-ink-body">{t("tp.noMarket")}</p>
           )}
         </div>
       </div>

@@ -3,10 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { createGuideline } from "./actions";
+import { useT } from "@/components/LangProvider";
 
 export default function NewGuidelineButton() {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const t = useT();
 
   function create() {
     start(async () => {
@@ -23,7 +25,7 @@ export default function NewGuidelineButton() {
       disabled={pending}
       className="rounded-bosch bg-bosch-red px-4 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60"
     >
-      {pending ? "Oluşturuluyor…" : "+ Yeni guideline"}
+      {pending ? t("btn.creating") : t("gl.new")}
     </button>
   );
 }

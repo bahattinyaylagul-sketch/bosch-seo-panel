@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ExecBadge } from "@/components/ui";
-import { EXEC_TYPE_LABELS_TR } from "@/lib/types";
+import { useT } from "@/components/LangProvider";
 import type { Execution, ExecutionType, Market } from "@/lib/types";
 import { createExecution, updateExecution, deleteExecution, uploadExecutionFile } from "./actions";
 
@@ -12,6 +12,7 @@ const inputCls =
   "rounded-bosch border border-surface-border bg-white px-2.5 py-1.5 text-sm text-ink outline-none focus:border-bosch-blue";
 
 function Fields({ ex, markets, withMarket }: { ex?: Execution; markets: Market[]; withMarket: boolean }) {
+  const t = useT();
   return (
     <>
       {withMarket && (
@@ -24,19 +25,19 @@ function Fields({ ex, markets, withMarket }: { ex?: Execution; markets: Market[]
         </select>
       )}
       <select name="type" defaultValue={ex?.type ?? "audit"} className={inputCls}>
-        {TYPES.map((t) => (
-          <option key={t} value={t}>
-            {EXEC_TYPE_LABELS_TR[t]}
+        {TYPES.map((ty) => (
+          <option key={ty} value={ty}>
+            {t(`execType.${ty}`)}
           </option>
         ))}
       </select>
-      <input name="description" defaultValue={ex?.description ?? ""} placeholder="Açıklama" className={`${inputCls} flex-1 min-w-[160px]`} />
-      <input name="urls" defaultValue={ex?.urls ?? ""} placeholder="URL'ler" className={`${inputCls} flex-1 min-w-[120px]`} />
+      <input name="description" defaultValue={ex?.description ?? ""} placeholder={t("ex.descPlaceholder")} className={`${inputCls} flex-1 min-w-[160px]`} />
+      <input name="urls" defaultValue={ex?.urls ?? ""} placeholder={t("ex.urlsPlaceholder")} className={`${inputCls} flex-1 min-w-[120px]`} />
       <input name="due_date" type="date" defaultValue={ex?.due_date ?? ""} className={inputCls} />
       <select name="status" defaultValue={ex?.status ?? "todo"} className={inputCls}>
-        <option value="todo">Yapılacak</option>
-        <option value="in_progress">Devam</option>
-        <option value="done">Tamamlandı</option>
+        <option value="todo">{t("execStatus.todo")}</option>
+        <option value="in_progress">{t("execStatus.in_progress")}</option>
+        <option value="done">{t("execStatus.done")}</option>
       </select>
     </>
   );
@@ -44,6 +45,7 @@ function Fields({ ex, markets, withMarket }: { ex?: Execution; markets: Market[]
 
 function CreateForm({ markets }: { markets: Market[] }) {
   const router = useRouter();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
 
@@ -53,7 +55,7 @@ function CreateForm({ markets }: { markets: Market[] }) {
         onClick={() => setOpen(true)}
         className="rounded-bosch bg-bosch-red px-4 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors"
       >
-        + Yeni iş
+        {t("ex.new")}
       </button>
     );
 
@@ -72,10 +74,10 @@ function CreateForm({ markets }: { markets: Market[] }) {
     >
       <Fields markets={markets} withMarket />
       <button type="submit" disabled={pending} className="rounded-bosch bg-bosch-red px-3 py-1.5 text-sm font-medium text-white hover:bg-bosch-red-hover disabled:opacity-60">
-        {pending ? "Ekleniyor…" : "Ekle"}
+        {pending ? t("ex.adding") : t("ex.add")}
       </button>
       <button type="button" onClick={() => setOpen(false)} className="text-sm text-ink-body hover:text-ink">
-        İptal
+        {t("ex.cancel")}
       </button>
     </form>
   );
@@ -83,6 +85,7 @@ function CreateForm({ markets }: { markets: Market[] }) {
 
 function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
   const router = useRouter();
+  const t = useT();
   const [edit, setEdit] = useState(false);
   const [pending, start] = useTransition();
 
@@ -108,10 +111,10 @@ function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
           >
             <Fields ex={ex} markets={markets} withMarket={false} />
             <button type="submit" disabled={pending} className="rounded-bosch bg-bosch-red px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60">
-              Kaydet
+              {t("btn.save")}
             </button>
             <button type="button" onClick={() => setEdit(false)} className="text-sm text-ink-body">
-              İptal
+              {t("ex.cancel")}
             </button>
           </form>
         </td>
@@ -120,25 +123,25 @@ function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
 
   return (
     <tr className="border-t border-surface-border align-top">
-      <td className="px-4 py-3 text-ink">{EXEC_TYPE_LABELS_TR[ex.type]}</td>
+      <td className="px-4 py-3 text-ink">{t(`execType.${ex.type}`)}</td>
       <td className="px-4 py-3 text-ink-body">{ex.description}</td>
       <td className="px-4 py-3 text-bosch-blue text-xs break-all">{ex.urls}</td>
       <td className="px-4 py-3 text-ink-body whitespace-nowrap">{ex.due_date ?? "—"}</td>
       <td className="px-4 py-3">
-        <ExecBadge status={ex.status} />
+        <ExecBadge status={ex.status} label={t(`execStatus.${ex.status}`)} />
         {ex.output_file_url && (
           <a href={ex.output_file_url} target="_blank" rel="noreferrer" className="block text-xs text-bosch-blue hover:underline mt-1">
-            çıktı dosyası ↗
+            {t("ex.outputFile")}
           </a>
         )}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <div className="flex items-center gap-2">
           <button onClick={() => setEdit(true)} className="text-xs text-bosch-blue hover:underline">
-            Düzenle
+            {t("ex.edit")}
           </button>
           <label className="text-xs text-bosch-blue hover:underline cursor-pointer">
-            {pending ? "…" : "Dosya"}
+            {pending ? "…" : t("ex.file")}
             <input
               type="file"
               className="hidden"
@@ -156,7 +159,7 @@ function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
           </label>
           <button
             onClick={() => {
-              if (!confirm("Bu iş silinsin mi?")) return;
+              if (!confirm(t("ex.confirmDelete"))) return;
               start(async () => {
                 await deleteExecution(ex.id);
                 refresh();
@@ -164,7 +167,7 @@ function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
             }}
             className="text-xs text-bosch-red hover:underline"
           >
-            Sil
+            {t("ex.delete")}
           </button>
         </div>
       </td>
@@ -173,6 +176,7 @@ function Row({ ex, markets }: { ex: Execution; markets: Market[] }) {
 }
 
 export default function ExecutionManager({ markets, executions }: { markets: Market[]; executions: Execution[] }) {
+  const t = useT();
   return (
     <div>
       <div className="mb-5">
@@ -191,12 +195,12 @@ export default function ExecutionManager({ markets, executions }: { markets: Mar
                 <table className="w-full text-sm">
                   <thead className="bg-surface-muted text-ink-body">
                     <tr>
-                      <th className="text-left font-medium px-4 py-2.5">Tip</th>
-                      <th className="text-left font-medium px-4 py-2.5">Açıklama</th>
-                      <th className="text-left font-medium px-4 py-2.5">URL</th>
-                      <th className="text-left font-medium px-4 py-2.5">Tarih</th>
-                      <th className="text-left font-medium px-4 py-2.5">Statü / çıktı</th>
-                      <th className="text-left font-medium px-4 py-2.5">İşlem</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colType")}</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colDesc")}</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colUrl")}</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colDate")}</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colStatusOut")}</th>
+                      <th className="text-left font-medium px-4 py-2.5">{t("ex.colAction")}</th>
                     </tr>
                   </thead>
                   <tbody>

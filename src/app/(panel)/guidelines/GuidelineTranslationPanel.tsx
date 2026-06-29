@@ -7,7 +7,8 @@ import {
   saveGuidelineTranslation,
   approveGuidelineTranslation,
 } from "./actions";
-import { STATUS_LABELS_TR, type GuidelineTranslation, type Market } from "@/lib/types";
+import { useT } from "@/components/LangProvider";
+import { type GuidelineTranslation, type Market } from "@/lib/types";
 
 const inputCls =
   "w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue disabled:bg-surface-muted disabled:text-ink-body";
@@ -27,6 +28,7 @@ export default function GuidelineTranslationPanel({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<"translate" | "save" | "approve" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export default function GuidelineTranslationPanel({
           <span className="inline-block rounded-bosch bg-bosch-blue px-1.5 py-0.5 text-xs text-white">{market.code}</span>
           {market.name}
         </h3>
-        <span className={`text-xs font-medium ${statusColor}`}>{STATUS_LABELS_TR[status]}</span>
+        <span className={`text-xs font-medium ${statusColor}`}>{t(`status.${status}`)}</span>
       </div>
 
       {canTranslate && (
@@ -67,7 +69,7 @@ export default function GuidelineTranslationPanel({
           disabled={pending}
           className="mb-3 rounded-bosch border border-bosch-blue px-3 py-1.5 text-xs font-medium text-bosch-blue hover:bg-bosch-blue/10 transition-colors disabled:opacity-60"
         >
-          {busy === "translate" ? "Çevriliyor…" : isEmpty ? "Çevir" : "Yeniden çevir"}
+          {busy === "translate" ? t("btn.translating") : isEmpty ? t("btn.translate") : t("btn.retranslate")}
         </button>
       )}
 
@@ -77,7 +79,7 @@ export default function GuidelineTranslationPanel({
 
       {isEmpty ? (
         <p className="text-xs text-ink-body">
-          Henüz çeviri yok. {canTranslate ? "“Çevir” ile başlat." : "Admin çeviri başlatınca görünür."}
+          {canTranslate ? t("tp.emptyAdmin") : t("tp.emptyOther")}
         </p>
       ) : (
         <form
@@ -90,11 +92,11 @@ export default function GuidelineTranslationPanel({
           className="space-y-3"
         >
           <div>
-            <label className={labelCls}>Başlık</label>
+            <label className={labelCls}>{t("field.title")}</label>
             <input name="title" defaultValue={translation?.title ?? ""} disabled={!canEdit} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Gövde (markdown)</label>
+            <label className={labelCls}>{t("field.bodyMd")}</label>
             <textarea
               name="body"
               defaultValue={translation?.body ?? ""}
@@ -110,7 +112,7 @@ export default function GuidelineTranslationPanel({
                 disabled={pending}
                 className="rounded-bosch border border-surface-border bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-surface-muted transition-colors disabled:opacity-60"
               >
-                {busy === "save" ? "Kaydediliyor…" : "Düzenlemeyi kaydet"}
+                {busy === "save" ? t("btn.saving") : t("btn.saveEdit")}
               </button>
               <button
                 type="button"
@@ -118,7 +120,7 @@ export default function GuidelineTranslationPanel({
                 disabled={pending || status === "approved"}
                 className="rounded-bosch bg-bosch-green px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                {busy === "approve" ? "Onaylanıyor…" : status === "approved" ? "Onaylandı ✓" : "Onayla"}
+                {busy === "approve" ? t("btn.approving") : status === "approved" ? t("btn.approved") : t("btn.approve")}
               </button>
             </div>
           )}

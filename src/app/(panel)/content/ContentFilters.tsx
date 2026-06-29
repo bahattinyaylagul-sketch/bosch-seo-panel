@@ -2,10 +2,12 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Market } from "@/lib/types";
+import { useT } from "@/components/LangProvider";
 
 export default function ContentFilters({ markets }: { markets: Market[] }) {
   const router = useRouter();
   const params = useSearchParams();
+  const t = useT();
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(params.toString());
@@ -24,7 +26,7 @@ export default function ContentFilters({ markets }: { markets: Market[] }) {
         onChange={(e) => setParam("market", e.target.value)}
         className={selectCls}
       >
-        <option value="">Tüm pazarlar</option>
+        <option value="">{t("content.allMarkets")}</option>
         {markets.map((m) => (
           <option key={m.id} value={m.id}>
             {m.code} · {m.name}
@@ -37,10 +39,10 @@ export default function ContentFilters({ markets }: { markets: Market[] }) {
         onChange={(e) => setParam("status", e.target.value)}
         className={selectCls}
       >
-        <option value="">Tüm statüler</option>
-        <option value="draft">Taslak</option>
-        <option value="translated">Çevrildi</option>
-        <option value="approved">Onaylandı</option>
+        <option value="">{t("content.allStatus")}</option>
+        <option value="draft">{t("status.draft")}</option>
+        <option value="translated">{t("status.translated")}</option>
+        <option value="approved">{t("status.approved")}</option>
       </select>
     </div>
   );

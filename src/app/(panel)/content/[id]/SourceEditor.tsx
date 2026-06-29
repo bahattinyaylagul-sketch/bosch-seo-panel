@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateContent } from "../actions";
+import { useT } from "@/components/LangProvider";
 import type { Content } from "@/lib/types";
 
 const inputCls =
@@ -17,6 +18,7 @@ export default function SourceEditor({
   editable: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -38,12 +40,12 @@ export default function SourceEditor({
       className="bg-surface-muted border border-surface-border rounded-bosch p-4 space-y-3"
     >
       <div>
-        <label className={labelCls}>Başlık</label>
+        <label className={labelCls}>{t("field.title")}</label>
         <input name="title" defaultValue={content.title} disabled={!editable} className={inputCls} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={labelCls}>Hedef keyword</label>
+          <label className={labelCls}>{t("field.keyword")}</label>
           <input
             name="target_keyword"
             defaultValue={content.target_keyword ?? ""}
@@ -52,12 +54,12 @@ export default function SourceEditor({
           />
         </div>
         <div>
-          <label className={labelCls}>Slug</label>
+          <label className={labelCls}>{t("field.slug")}</label>
           <input name="slug" defaultValue={content.slug ?? ""} disabled={!editable} className={inputCls} />
         </div>
       </div>
       <div>
-        <label className={labelCls}>Meta title</label>
+        <label className={labelCls}>{t("field.metaTitle")}</label>
         <input
           name="meta_title"
           defaultValue={content.meta_title ?? ""}
@@ -66,7 +68,7 @@ export default function SourceEditor({
         />
       </div>
       <div>
-        <label className={labelCls}>Meta description</label>
+        <label className={labelCls}>{t("field.metaDesc")}</label>
         <textarea
           name="meta_description"
           defaultValue={content.meta_description ?? ""}
@@ -76,7 +78,7 @@ export default function SourceEditor({
         />
       </div>
       <div>
-        <label className={labelCls}>Schema tipi</label>
+        <label className={labelCls}>{t("field.schemaType")}</label>
         <select
           name="schema_type"
           defaultValue={content.schema_type}
@@ -89,7 +91,7 @@ export default function SourceEditor({
         </select>
       </div>
       <div>
-        <label className={labelCls}>Gövde metni (markdown)</label>
+        <label className={labelCls}>{t("field.bodyMd")}</label>
         <textarea
           name="body"
           defaultValue={content.body ?? ""}
@@ -106,9 +108,9 @@ export default function SourceEditor({
             disabled={pending}
             className="rounded-bosch bg-bosch-red px-4 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60"
           >
-            {pending ? "Kaydediliyor…" : "Kaydet"}
+            {pending ? t("btn.saving") : t("btn.save")}
           </button>
-          {saved && <span className="text-xs text-bosch-green">Kaydedildi ✓</span>}
+          {saved && <span className="text-xs text-bosch-green">{t("btn.saved")}</span>}
         </div>
       )}
     </form>

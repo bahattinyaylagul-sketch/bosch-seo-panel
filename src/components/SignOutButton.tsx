@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useT } from "./LangProvider";
 
 export default function SignOutButton() {
   const router = useRouter();
+  const t = useT();
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -16,7 +18,7 @@ export default function SignOutButton() {
       onClick={signOut}
       className="text-xs text-ink-body hover:text-bosch-red transition-colors"
     >
-      Çıkış
+      {t("common.signOut")}
     </button>
   );
 }

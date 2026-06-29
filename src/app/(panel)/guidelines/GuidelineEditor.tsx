@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateGuideline } from "./actions";
+import { useT } from "@/components/LangProvider";
 import type { Guideline } from "@/lib/types";
 
 const inputCls =
@@ -11,6 +12,7 @@ const labelCls = "block text-xs text-ink-body mb-1";
 
 export default function GuidelineEditor({ guideline, editable }: { guideline: Guideline; editable: boolean }) {
   const router = useRouter();
+  const t = useT();
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -29,21 +31,20 @@ export default function GuidelineEditor({ guideline, editable }: { guideline: Gu
   return (
     <form onSubmit={onSubmit} className="bg-surface-muted border border-surface-border rounded-bosch p-4 space-y-3">
       <div>
-        <label className={labelCls}>Başlık</label>
+        <label className={labelCls}>{t("field.title")}</label>
         <input name="title" defaultValue={guideline.title} disabled={!editable} className={inputCls} />
       </div>
       <div>
-        <label className={labelCls}>Kategori</label>
+        <label className={labelCls}>{t("field.category")}</label>
         <input
           name="category"
           defaultValue={guideline.category ?? ""}
           disabled={!editable}
-          placeholder="teknik standart / schema kuralı / GEO"
           className={inputCls}
         />
       </div>
       <div>
-        <label className={labelCls}>Gövde (markdown)</label>
+        <label className={labelCls}>{t("field.bodyMd")}</label>
         <textarea
           name="body"
           defaultValue={guideline.body ?? ""}
@@ -59,9 +60,9 @@ export default function GuidelineEditor({ guideline, editable }: { guideline: Gu
             disabled={pending}
             className="rounded-bosch bg-bosch-red px-4 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60"
           >
-            {pending ? "Kaydediliyor…" : "Kaydet"}
+            {pending ? t("btn.saving") : t("btn.save")}
           </button>
-          {saved && <span className="text-xs text-bosch-green">Kaydedildi ✓</span>}
+          {saved && <span className="text-xs text-bosch-green">{t("btn.saved")}</span>}
         </div>
       )}
     </form>

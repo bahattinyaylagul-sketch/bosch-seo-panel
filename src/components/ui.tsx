@@ -1,5 +1,4 @@
 import type { TranslationStatus, ExecutionStatus } from "@/lib/types";
-import { STATUS_LABELS_TR, EXEC_STATUS_LABELS_TR } from "@/lib/types";
 
 const TRANSLATION_COLORS: Record<TranslationStatus, string> = {
   draft: "bg-surface-muted text-ink-body border-surface-border",
@@ -13,22 +12,23 @@ const EXEC_COLORS: Record<ExecutionStatus, string> = {
   done: "bg-bosch-green/10 text-bosch-green border-bosch-green/30",
 };
 
-export function StatusBadge({ status }: { status: TranslationStatus }) {
+// label çağıran taraftan (çeviri ile) gelir
+export function StatusBadge({ status, label }: { status: TranslationStatus; label: string }) {
   return (
     <span
       className={`inline-block rounded-bosch border px-2 py-0.5 text-xs ${TRANSLATION_COLORS[status]}`}
     >
-      {STATUS_LABELS_TR[status]}
+      {label}
     </span>
   );
 }
 
-export function ExecBadge({ status }: { status: ExecutionStatus }) {
+export function ExecBadge({ status, label }: { status: ExecutionStatus; label: string }) {
   return (
     <span
       className={`inline-block rounded-bosch border px-2 py-0.5 text-xs ${EXEC_COLORS[status]}`}
     >
-      {EXEC_STATUS_LABELS_TR[status]}
+      {label}
     </span>
   );
 }

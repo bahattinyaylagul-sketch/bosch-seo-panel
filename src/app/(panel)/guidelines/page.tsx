@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { PageHeader, StatusBadge } from "@/components/ui";
+import { getT } from "@/lib/i18n-server";
 import NewGuidelineButton from "./NewGuidelineButton";
 import type { Guideline, Market } from "@/lib/types";
 
@@ -28,12 +29,13 @@ export default async function GuidelinesPage() {
   const targetMarkets = (markets as Market[]).filter((m) => !m.is_source);
   const tx = translations as GTranslation[];
   const gl = (guidelines ?? []) as Guideline[];
+  const t = getT();
 
   return (
     <div>
       <PageHeader
-        title="Guideline"
-        description="Teknik standart, schema kuralı, başlık prensibi, GEO metodu — pazarlara çevrilebilir dokümanlar."
+        title={t("gl.title")}
+        description={t("gl.desc")}
         action={profile?.role === "admin" ? <NewGuidelineButton /> : undefined}
       />
 
@@ -51,11 +53,11 @@ export default async function GuidelinesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {targetMarkets.map((m) => {
-                    const t = gts.find((x) => x.market_id === m.id);
+                    const gt_ = gts.find((x) => x.market_id === m.id);
                     return (
                       <div key={m.id} className="flex items-center gap-1">
                         <span className="text-xs text-ink-body">{m.code}</span>
-                        {t ? <StatusBadge status={t.status} /> : <span className="text-xs text-ink-body">—</span>}
+                        {gt_ ? <StatusBadge status={gt_.status} label={t(`status.${gt_.status}`)} /> : <span className="text-xs text-ink-body">—</span>}
                       </div>
                     );
                   })}
@@ -65,7 +67,7 @@ export default async function GuidelinesPage() {
           );
         })}
         {gl.length === 0 && (
-          <p className="text-sm text-ink-body">Henüz guideline yok.</p>
+          <p className="text-sm text-ink-body">{t("gl.empty")}</p>
         )}
       </div>
     </div>

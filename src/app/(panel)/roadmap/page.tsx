@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, ExecBadge } from "@/components/ui";
-import { EXEC_TYPE_LABELS_TR } from "@/lib/types";
+import { getT } from "@/lib/i18n-server";
 import type { Execution, Market } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,16 +16,14 @@ export default async function RoadmapPage() {
   const ms = markets as Market[];
   const ex = (executions as Execution[]).filter((e) => e.due_date);
   const marketCode = (id: string) => ms.find((m) => m.id === id)?.code ?? "—";
+  const t = getT();
 
   return (
     <div>
-      <PageHeader
-        title="Roadmap"
-        description="İşlerin tarih sırasına göre takvim/sıra görünümü. Pazar bazında ilerleme."
-      />
+      <PageHeader title={t("rm.title")} description={t("rm.desc")} />
 
       {ex.length === 0 ? (
-        <p className="text-sm text-ink-body">Tarihli iş kaydı yok.</p>
+        <p className="text-sm text-ink-body">{t("rm.empty")}</p>
       ) : (
         <div className="relative pl-6">
           <div className="absolute left-1.5 top-1 bottom-1 w-px bg-surface-border" />
@@ -39,14 +37,14 @@ export default async function RoadmapPage() {
                   <div className="bg-surface-muted border border-surface-border rounded-bosch p-3 flex items-center justify-between">
                     <div>
                       <div className="text-sm text-ink">
-                        <span className="font-medium">{EXEC_TYPE_LABELS_TR[e.type]}</span>
+                        <span className="font-medium">{t(`execType.${e.type}`)}</span>
                         <span className="text-ink-body"> · {e.description}</span>
                       </div>
                       <div className="text-xs text-ink-body mt-0.5">
                         {marketCode(e.market_id)} · {e.due_date}
                       </div>
                     </div>
-                    <ExecBadge status={e.status} />
+                    <ExecBadge status={e.status} label={t(`execStatus.${e.status}`)} />
                   </div>
                 </div>
               );

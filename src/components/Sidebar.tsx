@@ -3,23 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { UserRole } from "@/lib/types";
+import { useT } from "./LangProvider";
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: string;
   roles: UserRole[];
 }
 
 const NAV: NavItem[] = [
-  { href: "/content", label: "İçerik kütüphanesi", roles: ["admin", "market_manager"] },
-  { href: "/guidelines", label: "Guideline", roles: ["admin", "market_manager"] },
-  { href: "/execution", label: "İş takibi", roles: ["admin", "market_manager"] },
-  { href: "/roadmap", label: "Roadmap", roles: ["admin", "market_manager"] },
-  { href: "/dashboard", label: "Global dashboard", roles: ["admin", "market_manager", "viewer"] },
+  { href: "/content", labelKey: "nav.content", roles: ["admin", "market_manager"] },
+  { href: "/guidelines", labelKey: "nav.guidelines", roles: ["admin", "market_manager"] },
+  { href: "/execution", labelKey: "nav.execution", roles: ["admin", "market_manager"] },
+  { href: "/roadmap", labelKey: "nav.roadmap", roles: ["admin", "market_manager"] },
+  { href: "/dashboard", labelKey: "nav.dashboard", roles: ["admin", "market_manager", "viewer"] },
 ];
 
 export default function Sidebar({ role }: { role: UserRole }) {
   const pathname = usePathname();
+  const t = useT();
   const items = NAV.filter((n) => n.roles.includes(role));
 
   return (
@@ -38,7 +40,7 @@ export default function Sidebar({ role }: { role: UserRole }) {
                   : "border-transparent text-ink-body hover:bg-surface-muted hover:text-ink",
               ].join(" ")}
             >
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}

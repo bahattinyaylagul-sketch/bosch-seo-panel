@@ -14,8 +14,9 @@ export default function Header({
   return (
     <header className="border-b border-surface-border bg-white">
       <div className="flex items-center justify-between px-6 h-14">
-        <div className="flex items-baseline gap-3">
-          <span className="text-lg font-semibold tracking-tight text-ink">BOSCH</span>
+        <div className="flex items-center gap-3">
+          {/* Logo: public/bosch-logo.png (yoksa "BOSCH" alt metni görünür) */}
+          <img src="/bosch-logo.png" alt="BOSCH" className="h-6 w-auto" />
           <span className="hidden sm:inline text-sm text-ink-body">
             {t("panel.subtitle")} · {t("panel.name")}
           </span>

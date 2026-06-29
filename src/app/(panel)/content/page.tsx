@@ -70,7 +70,6 @@ export default async function ContentListPage({
             <tr>
               <th className="text-left font-medium px-4 py-2.5">Başlık</th>
               <th className="text-left font-medium px-4 py-2.5">Keyword</th>
-              <th className="text-left font-medium px-4 py-2.5">Schema</th>
               {targetMarkets.map((m) => (
                 <th key={m.id} className="text-left font-medium px-4 py-2.5">
                   {m.code}
@@ -90,7 +89,6 @@ export default async function ContentListPage({
                     <div className="text-xs text-ink-body">/{c.slug}</div>
                   </td>
                   <td className="px-4 py-3 text-ink-body">{c.target_keyword}</td>
-                  <td className="px-4 py-3 text-ink-body">{c.schema_type}</td>
                   {targetMarkets.map((m) => {
                     const t = ts.find((x) => x.market_id === m.id);
                     return (
@@ -104,7 +102,7 @@ export default async function ContentListPage({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3 + targetMarkets.length} className="px-4 py-8 text-center text-ink-body">
+                <td colSpan={2 + targetMarkets.length} className="px-4 py-8 text-center text-ink-body">
                   Kayıt yok.
                 </td>
               </tr>

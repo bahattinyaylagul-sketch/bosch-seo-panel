@@ -5,9 +5,11 @@
 
 -- Pazarlar
 insert into markets (code, name, locale, is_source, sort_order) values
-  ('TR', 'Türkiye',    'tr-TR', true,  0),
-  ('ES', 'España',     'es-ES', false, 1),
-  ('DE', 'Deutschland','de-DE', false, 2)
+  ('TR', 'Türkiye',       'tr-TR', true,  0),
+  ('ES', 'España',        'es-ES', false, 1),
+  ('DE', 'Deutschland',   'de-DE', false, 2),
+  ('EN', 'United Kingdom','en-GB', false, 3),
+  ('FR', 'France',        'fr-FR', false, 4)
 on conflict (code) do nothing;
 
 -- Örnek içerik (TR kaynak)

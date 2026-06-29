@@ -80,6 +80,7 @@ const tr: Dict = {
   "tp.emptyAdmin": "Henüz çeviri yok. “Çevir” ile başlat.",
   "tp.emptyOther": "Henüz çeviri yok. Admin çeviri başlatınca görünür.",
   "tp.noMarket": "Bu içerik için size atanmış bir pazar yok.",
+  "tp.selectMarket": "Pazar / dil seç",
 
   "gl.title": "Guideline",
   "gl.desc": "Teknik standart, schema kuralı, başlık prensibi, GEO metodu — pazarlara çevrilebilir dokümanlar.",
@@ -192,6 +193,7 @@ const en: Dict = {
   "tp.emptyAdmin": "No translation yet. Start with “Translate”.",
   "tp.emptyOther": "No translation yet. Appears once the admin starts it.",
   "tp.noMarket": "No market assigned to you for this content.",
+  "tp.selectMarket": "Select market / language",
 
   "gl.title": "Guidelines",
   "gl.desc": "Technical standards, schema rules, title principles, GEO method — documents translatable per market.",
@@ -304,6 +306,7 @@ const de: Dict = {
   "tp.emptyAdmin": "Noch keine Übersetzung. Mit „Übersetzen“ starten.",
   "tp.emptyOther": "Noch keine Übersetzung. Erscheint, sobald der Admin sie startet.",
   "tp.noMarket": "Ihnen ist für diesen Inhalt kein Markt zugewiesen.",
+  "tp.selectMarket": "Markt / Sprache wählen",
 
   "gl.title": "Richtlinien",
   "gl.desc": "Technische Standards, Schema-Regeln, Titelprinzipien, GEO-Methode — pro Markt übersetzbar.",
@@ -416,6 +419,7 @@ const fr: Dict = {
   "tp.emptyAdmin": "Pas encore de traduction. Commencez avec « Traduire ».",
   "tp.emptyOther": "Pas encore de traduction. Apparaît dès que l'admin la lance.",
   "tp.noMarket": "Aucun marché ne vous est attribué pour ce contenu.",
+  "tp.selectMarket": "Sélectionner le marché / la langue",
 
   "gl.title": "Directives",
   "gl.desc": "Normes techniques, règles de schéma, principes de titre, méthode GEO — documents traduisibles par marché.",
@@ -528,6 +532,7 @@ const es: Dict = {
   "tp.emptyAdmin": "Aún no hay traducción. Empieza con «Traducir».",
   "tp.emptyOther": "Aún no hay traducción. Aparece cuando el admin la inicia.",
   "tp.noMarket": "No tienes ningún mercado asignado para este contenido.",
+  "tp.selectMarket": "Seleccionar mercado / idioma",
 
   "gl.title": "Directrices",
   "gl.desc": "Estándares técnicos, reglas de schema, principios de título, método GEO — documentos traducibles por mercado.",

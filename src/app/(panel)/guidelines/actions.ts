@@ -63,15 +63,18 @@ export async function translateGuidelineForMarket(guidelineId: string, marketId:
   const result = await translateDoc(g, market.locale, market.name);
   const { error } = await supabase
     .from("guideline_translations")
-    .update({
-      title: result.title,
-      body: result.body,
-      status: "translated",
-      translated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("guideline_id", guidelineId)
-    .eq("market_id", marketId);
+    .upsert(
+      {
+        guideline_id: guidelineId,
+        market_id: marketId,
+        title: result.title,
+        body: result.body,
+        status: "translated",
+        translated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "guideline_id,market_id" }
+    );
   if (error) throw new Error(error.message);
   revalidatePath(`/guidelines/${guidelineId}`);
   revalidatePath("/guidelines");

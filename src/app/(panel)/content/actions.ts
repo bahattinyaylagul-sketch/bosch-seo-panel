@@ -92,22 +92,26 @@ export async function translateForMarket(contentId: string, marketId: string) {
 
   const result = await translateContent(content, market.locale, market.name);
 
+  // Upsert: kayıt yoksa oluştur (sonradan eklenen diller eski içeriklerde de çalışsın)
   const { error } = await supabase
     .from("content_translations")
-    .update({
-      title: result.title,
-      target_keyword: result.target_keyword,
-      slug: result.slug,
-      meta_title: result.meta_title,
-      meta_description: result.meta_description,
-      body: result.body,
-      status: "translated",
-      needs_local_review: true, // keyword & slug lokal düzenleme gerektirir
-      translated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("content_id", contentId)
-    .eq("market_id", marketId);
+    .upsert(
+      {
+        content_id: contentId,
+        market_id: marketId,
+        title: result.title,
+        target_keyword: result.target_keyword,
+        slug: result.slug,
+        meta_title: result.meta_title,
+        meta_description: result.meta_description,
+        body: result.body,
+        status: "translated",
+        needs_local_review: true, // keyword & slug lokal düzenleme gerektirir
+        translated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "content_id,market_id" }
+    );
   if (error) throw new Error(error.message);
 
   revalidatePath(`/content/${contentId}`);

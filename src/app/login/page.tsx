@@ -69,7 +69,7 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <img src="/bosch-logo.png" alt="BOSCH" className="h-12 w-auto mx-auto block" />
+            <img src="/bosch-logo.png" alt="BOSCH" className="h-12 w-auto mx-auto block -translate-x-3" />
             <div className="mt-3 text-sm text-ink-body">{t("panel.subtitle")}</div>
             <div className="mt-0.5 text-xs text-ink-body">{t("panel.name")}</div>
           </div>

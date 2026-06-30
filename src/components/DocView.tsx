@@ -32,11 +32,11 @@ export function printDocument(title: string, bodyHtml: string) {
   <div class="wrap">
     <div class="head">
       <img src="${origin}/bosch-logo.png" alt="BOSCH" />
-      <span class="meta">NextCode × Bosch Aftermarket · Global SEO Paneli</span>
+      <span class="meta">Bosch Aftermarket · Global SEO Paneli</span>
     </div>
     <h1>${escapeHtml(safeTitle)}</h1>
     <div class="body">${bodyHtml}</div>
-    <div class="foot"><span>© Bosch Sanayi ve Ticaret A.Ş</span><span>NextCode Collective</span></div>
+    <div class="foot"><span>© Bosch Sanayi ve Ticaret A.Ş</span><span>Global SEO Paneli</span></div>
   </div>
 </body></html>`);
   w.document.close();

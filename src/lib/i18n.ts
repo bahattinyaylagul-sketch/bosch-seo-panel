@@ -16,14 +16,14 @@ export type Dict = Record<string, string>;
 
 const tr: Dict = {
   "panel.name": "Global SEO Paneli",
-  "panel.subtitle": "NextCode × Bosch Aftermarket",
+  "panel.subtitle": "Bosch Aftermarket",
   "common.signOut": "Çıkış",
   "common.back": "Geri",
   "doc.download": "PDF indir",
   "doc.edit": "Düzenle",
   "doc.view": "Görüntüle",
   "doc.empty": "İçerik yok.",
-  "role.admin": "Admin (NextCode)",
+  "role.admin": "Admin",
   "role.market_manager": "Pazar yöneticisi",
   "role.viewer": "İzleyici (GM)",
 
@@ -98,7 +98,7 @@ const tr: Dict = {
   "gl.noMarket": "Bu doküman için size atanmış bir pazar yok.",
 
   "ex.title": "İş takibi",
-  "ex.desc": "NextCode'un pazar bazında yürüttüğü işler: audit, schema, redirect, GEO, optimizasyon.",
+  "ex.desc": "Pazar bazında yürütülen işler: audit, schema, redirect, GEO, optimizasyon.",
   "ex.colType": "Tip",
   "ex.colDesc": "Açıklama",
   "ex.colUrl": "URL",
@@ -134,19 +134,19 @@ const tr: Dict = {
   "db.footnote": "% = pazardaki onaylanmış içerik oranı (onaylanan / toplam).",
 
   "footer.copyright": "© Bosch Sanayi ve Ticaret A.Ş",
-  "footer.credit": "NextCode Collective tarafından hazırlanmıştır",
+  "footer.credit": "",
 };
 
 const en: Dict = {
   "panel.name": "Global SEO Panel",
-  "panel.subtitle": "NextCode × Bosch Aftermarket",
+  "panel.subtitle": "Bosch Aftermarket",
   "common.signOut": "Sign out",
   "common.back": "Back",
   "doc.download": "Download PDF",
   "doc.edit": "Edit",
   "doc.view": "View",
   "doc.empty": "No content.",
-  "role.admin": "Admin (NextCode)",
+  "role.admin": "Admin",
   "role.market_manager": "Market manager",
   "role.viewer": "Viewer (GM)",
 
@@ -221,7 +221,7 @@ const en: Dict = {
   "gl.noMarket": "No market assigned to you for this document.",
 
   "ex.title": "Execution",
-  "ex.desc": "Work NextCode runs per market: audit, schema, redirect, GEO, optimization.",
+  "ex.desc": "Work carried out per market: audit, schema, redirect, GEO, optimization.",
   "ex.colType": "Type",
   "ex.colDesc": "Description",
   "ex.colUrl": "URL",
@@ -257,19 +257,19 @@ const en: Dict = {
   "db.footnote": "% = approved content ratio for the market (approved / total).",
 
   "footer.copyright": "© Bosch Sanayi ve Ticaret A.Ş",
-  "footer.credit": "Built by NextCode Collective",
+  "footer.credit": "",
 };
 
 const de: Dict = {
   "panel.name": "Globales SEO-Panel",
-  "panel.subtitle": "NextCode × Bosch Aftermarket",
+  "panel.subtitle": "Bosch Aftermarket",
   "common.signOut": "Abmelden",
   "common.back": "Zurück",
   "doc.download": "PDF herunterladen",
   "doc.edit": "Bearbeiten",
   "doc.view": "Ansehen",
   "doc.empty": "Kein Inhalt.",
-  "role.admin": "Admin (NextCode)",
+  "role.admin": "Admin",
   "role.market_manager": "Marktmanager",
   "role.viewer": "Betrachter (GM)",
 
@@ -344,7 +344,7 @@ const de: Dict = {
   "gl.noMarket": "Ihnen ist für dieses Dokument kein Markt zugewiesen.",
 
   "ex.title": "Umsetzung",
-  "ex.desc": "Arbeiten, die NextCode pro Markt durchführt: Audit, Schema, Redirect, GEO, Optimierung.",
+  "ex.desc": "Arbeiten pro Markt: Audit, Schema, Redirect, GEO, Optimierung.",
   "ex.colType": "Typ",
   "ex.colDesc": "Beschreibung",
   "ex.colUrl": "URL",
@@ -380,19 +380,19 @@ const de: Dict = {
   "db.footnote": "% = Anteil freigegebener Inhalte pro Markt (freigegeben / gesamt).",
 
   "footer.copyright": "© Bosch Sanayi ve Ticaret A.Ş",
-  "footer.credit": "Erstellt von NextCode Collective",
+  "footer.credit": "",
 };
 
 const fr: Dict = {
   "panel.name": "Panneau SEO global",
-  "panel.subtitle": "NextCode × Bosch Aftermarket",
+  "panel.subtitle": "Bosch Aftermarket",
   "common.signOut": "Déconnexion",
   "common.back": "Retour",
   "doc.download": "Télécharger le PDF",
   "doc.edit": "Modifier",
   "doc.view": "Afficher",
   "doc.empty": "Aucun contenu.",
-  "role.admin": "Admin (NextCode)",
+  "role.admin": "Admin",
   "role.market_manager": "Responsable de marché",
   "role.viewer": "Observateur (GM)",
 
@@ -467,7 +467,7 @@ const fr: Dict = {
   "gl.noMarket": "Aucun marché ne vous est attribué pour ce document.",
 
   "ex.title": "Exécution",
-  "ex.desc": "Travaux menés par NextCode par marché : audit, schéma, redirection, GEO, optimisation.",
+  "ex.desc": "Travaux menés par marché : audit, schéma, redirection, GEO, optimisation.",
   "ex.colType": "Type",
   "ex.colDesc": "Description",
   "ex.colUrl": "URL",
@@ -503,19 +503,19 @@ const fr: Dict = {
   "db.footnote": "% = taux de contenu approuvé par marché (approuvé / total).",
 
   "footer.copyright": "© Bosch Sanayi ve Ticaret A.Ş",
-  "footer.credit": "Réalisé par NextCode Collective",
+  "footer.credit": "",
 };
 
 const es: Dict = {
   "panel.name": "Panel SEO global",
-  "panel.subtitle": "NextCode × Bosch Aftermarket",
+  "panel.subtitle": "Bosch Aftermarket",
   "common.signOut": "Cerrar sesión",
   "common.back": "Atrás",
   "doc.download": "Descargar PDF",
   "doc.edit": "Editar",
   "doc.view": "Ver",
   "doc.empty": "Sin contenido.",
-  "role.admin": "Admin (NextCode)",
+  "role.admin": "Admin",
   "role.market_manager": "Gerente de mercado",
   "role.viewer": "Visor (GM)",
 
@@ -590,7 +590,7 @@ const es: Dict = {
   "gl.noMarket": "No tienes ningún mercado asignado para este documento.",
 
   "ex.title": "Ejecución",
-  "ex.desc": "Trabajos que NextCode realiza por mercado: auditoría, schema, redirección, GEO, optimización.",
+  "ex.desc": "Trabajos realizados por mercado: auditoría, schema, redirección, GEO, optimización.",
   "ex.colType": "Tipo",
   "ex.colDesc": "Descripción",
   "ex.colUrl": "URL",
@@ -626,7 +626,7 @@ const es: Dict = {
   "db.footnote": "% = proporción de contenido aprobado por mercado (aprobado / total).",
 
   "footer.copyright": "© Bosch Sanayi ve Ticaret A.Ş",
-  "footer.credit": "Desarrollado por NextCode Collective",
+  "footer.credit": "",
 };
 
 export const DICTS: Record<Locale, Dict> = { tr, en, de, fr, es };

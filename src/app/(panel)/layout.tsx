@@ -36,9 +36,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <Sidebar role={profile.role} />
           <main className="flex-1 min-w-0 px-6 py-6">{children}</main>
         </div>
-        <footer className="border-t border-surface-border bg-white px-6 py-3 text-xs text-ink-body flex items-center justify-between">
+        <footer className="border-t border-surface-border bg-white px-6 py-3 text-xs text-ink-body">
           <span>{t("footer.copyright")}</span>
-          <span>{t("footer.credit")}</span>
         </footer>
       </div>
     </LangProvider>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Global SEO Paneli — NextCode × Bosch Aftermarket",
+  title: "Global SEO Paneli — Bosch Aftermarket",
   description: "İçerik hazırlama, otomatik çeviri, lokal onay ve koordinasyon merkezi.",
 };
 

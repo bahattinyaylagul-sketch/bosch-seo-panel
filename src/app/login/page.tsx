@@ -117,7 +117,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-xs text-ink-body">
-            {t("footer.copyright")} · NextCode Collective
+            {t("footer.copyright")}
           </p>
         </div>
       </div>

@@ -109,7 +109,7 @@ export const EXEC_TYPE_LABELS_TR: Record<ExecutionType, string> = {
 };
 
 export const ROLE_LABELS_TR: Record<UserRole, string> = {
-  admin: "Admin (NextCode)",
+  admin: "Admin",
   market_manager: "Pazar yöneticisi",
   viewer: "İzleyici (GM)",
 };

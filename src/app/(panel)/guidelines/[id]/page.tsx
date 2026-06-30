@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import { getT } from "@/lib/i18n-server";
-import GuidelineEditor from "../GuidelineEditor";
+import GuidelineSource from "../GuidelineSource";
 import GuidelineMarketTranslations, { type GuidelinePanel } from "../GuidelineMarketTranslations";
 import DeleteGuidelineButton from "../DeleteGuidelineButton";
+import { renderMarkdown } from "@/lib/markdown";
 import type { Guideline, GuidelineTranslation, Market } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -37,11 +38,16 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
     ? targetMarkets
     : targetMarkets.filter((m) => m.id === profile?.market_id);
 
-  const panels: GuidelinePanel[] = visibleMarkets.map((m) => ({
-    market: m,
-    translation: tx.find((x) => x.market_id === m.id) ?? null,
-    canEdit: isAdmin || (role === "market_manager" && m.id === profile?.market_id),
-  }));
+  const sourceHtml = renderMarkdown(guideline.body);
+  const panels: GuidelinePanel[] = visibleMarkets.map((m) => {
+    const tr_ = tx.find((x) => x.market_id === m.id) ?? null;
+    return {
+      market: m,
+      translation: tr_,
+      bodyHtml: renderMarkdown(tr_?.body),
+      canEdit: isAdmin || (role === "market_manager" && m.id === profile?.market_id),
+    };
+  });
 
   return (
     <div>
@@ -54,11 +60,7 @@ export default async function GuidelineDetailPage({ params }: { params: { id: st
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-          <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
-            <span className="inline-block rounded-bosch bg-bosch-red px-1.5 py-0.5 text-xs text-white">TR</span>
-            {t("gl.source")}
-          </h2>
-          <GuidelineEditor guideline={guideline} editable={isAdmin} />
+          <GuidelineSource guideline={guideline} bodyHtml={sourceHtml} editable={isAdmin} />
         </div>
 
         <div>

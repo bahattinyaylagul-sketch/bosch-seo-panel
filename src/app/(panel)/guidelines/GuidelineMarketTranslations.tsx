@@ -8,6 +8,7 @@ import type { GuidelineTranslation, Market } from "@/lib/types";
 export interface GuidelinePanel {
   market: Market;
   translation: GuidelineTranslation | null;
+  bodyHtml: string;
   canEdit: boolean;
 }
 
@@ -55,6 +56,7 @@ export default function GuidelineMarketTranslations({
         market={sel.market}
         guidelineId={guidelineId}
         translation={sel.translation}
+        bodyHtml={sel.bodyHtml}
         canTranslate={canTranslate}
         canEdit={sel.canEdit}
       />

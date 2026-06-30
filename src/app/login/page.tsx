@@ -69,7 +69,7 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <img src="/bosch-logo.png" alt="BOSCH" className="h-9 w-auto mx-auto" />
+            <img src="/bosch-logo.png" alt="BOSCH" className="h-12 w-auto mx-auto block" />
             <div className="mt-3 text-sm text-ink-body">{t("panel.subtitle")}</div>
             <div className="mt-0.5 text-xs text-ink-body">{t("panel.name")}</div>
           </div>
@@ -86,7 +86,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue"
-                placeholder="ad@nextcodecollective.com"
+                placeholder="ad@ornek.com"
               />
             </div>
             <div>

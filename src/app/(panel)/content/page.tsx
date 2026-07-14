@@ -66,8 +66,8 @@ export default async function ContentListPage({
 
       <ContentFilters markets={targetMarkets} />
 
-      <div className="border border-surface-border rounded-bosch overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="border border-surface-border rounded-bosch overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-surface-muted text-ink-body">
             <tr>
               <th className="text-left font-medium px-4 py-2.5">{t("field.title")}</th>

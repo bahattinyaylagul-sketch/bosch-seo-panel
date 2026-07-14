@@ -44,14 +44,14 @@ export default async function GuidelinesPage() {
           const gts = tx.filter((t) => t.guideline_id === g.id);
           return (
             <div key={g.id} className="bg-surface-muted border border-surface-border rounded-bosch p-4">
-              <div className="flex items-start justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                 <div>
                   <Link href={`/guidelines/${g.id}`} className="text-sm font-semibold text-ink hover:text-bosch-blue">
                     {g.title}
                   </Link>
                   {g.category && <p className="text-xs text-ink-body mt-0.5">{g.category}</p>}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {targetMarkets.map((m) => {
                     const gt_ = gts.find((x) => x.market_id === m.id);
                     return (

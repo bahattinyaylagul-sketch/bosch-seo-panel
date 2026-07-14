@@ -32,9 +32,9 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       <div className="min-h-screen flex flex-col bg-white">
         <div className="bosch-supergraphic" />
         <Header profile={profile} market={market} />
-        <div className="flex flex-1">
+        <div className="flex flex-1 flex-col lg:flex-row">
           <Sidebar role={profile.role} />
-          <main className="flex-1 min-w-0 px-6 py-6">{children}</main>
+          <main className="flex-1 min-w-0 px-4 sm:px-6 py-5 sm:py-6">{children}</main>
         </div>
         <footer className="border-t border-surface-border bg-white px-6 py-3 text-xs text-ink-body">
           <span>{t("footer.copyright")}</span>

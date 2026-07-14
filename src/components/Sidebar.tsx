@@ -25,8 +25,8 @@ export default function Sidebar({ role }: { role: UserRole }) {
   const items = NAV.filter((n) => n.roles.includes(role));
 
   return (
-    <aside className="w-60 shrink-0 border-r border-surface-border bg-white min-h-[calc(100vh-57px)]">
-      <nav className="py-4">
+    <aside className="w-full lg:w-60 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-surface-border bg-white lg:min-h-[calc(100vh-57px)]">
+      <nav className="flex lg:flex-col overflow-x-auto lg:overflow-visible py-1 lg:py-4">
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
@@ -34,9 +34,10 @@ export default function Sidebar({ role }: { role: UserRole }) {
               key={item.href}
               href={item.href}
               className={[
-                "flex items-center gap-2 px-5 py-2.5 text-sm border-l-2 transition-colors",
+                "whitespace-nowrap flex items-center gap-2 px-4 lg:px-5 py-3 lg:py-2.5 text-sm transition-colors",
+                "border-b-2 lg:border-b-0 lg:border-l-2",
                 active
-                  ? "border-bosch-red text-ink bg-surface-muted font-medium"
+                  ? "border-bosch-red text-ink lg:bg-surface-muted font-medium"
                   : "border-transparent text-ink-body hover:bg-surface-muted hover:text-ink",
               ].join(" ")}
             >

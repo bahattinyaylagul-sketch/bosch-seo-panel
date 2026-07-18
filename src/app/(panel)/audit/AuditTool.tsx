@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useTransition } from "react";
 import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
-import { getMarkets, addCustomTasks, type MarketRow } from "../geo-checklist/actions";
+import { addCustomTasks } from "../geo-checklist/actions";
 import { useT } from "@/components/LangProvider";
 
 const GREEN = "#00884A";
@@ -476,7 +476,7 @@ function ScanBar() {
 }
 
 // ── Site Takibi: kalıcı site listesi + geçmişe göre "düzelen/yeni/devam" ────
-function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string }) => void }) {
+function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string; siteId?: string }) => void }) {
   const [sites, setSites] = useState<AuditSite[] | null>(null);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
@@ -498,18 +498,18 @@ function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: Sc
   async function del(id: string) { await deleteAuditSite(id); load(); }
   async function scan(id: string) {
     setScanningId(id); setErr(null);
-    try { const r = await runSiteScan(id); if (r.ok) { onReport(r.data, { diff: r.diff }); load(); } else setErr(r.error); }
+    try { const r = await runSiteScan(id); if (r.ok) { onReport(r.data, { diff: r.diff, siteId: id }); load(); } else setErr(r.error); }
     catch { setErr("Tarama sırasında hata"); }
     finally { setScanningId(null); }
   }
   async function openLatest(s: AuditSite) {
     setOpeningId(s.id); setErr(null);
-    try { const d = await getLatestScanReport(s.id); if (d) onReport(d, { savedAt: s.last?.created_at }); else setErr("Kayıtlı rapor yok — önce tarayın."); }
+    try { const d = await getLatestScanReport(s.id); if (d) onReport(d, { savedAt: s.last?.created_at, siteId: s.id }); else setErr("Kayıtlı rapor yok — önce tarayın."); }
     finally { setOpeningId(null); }
   }
   async function openScan(row: ScanRow) {
     setOpeningId(row.id); setErr(null);
-    try { const d = await getScanReport(row.id); if (d) onReport(d, { savedAt: row.created_at }); else setErr("Rapor bulunamadı."); }
+    try { const d = await getScanReport(row.id); if (d) onReport(d, { savedAt: row.created_at, siteId: historyOf ?? undefined }); else setErr("Rapor bulunamadı."); }
     finally { setOpeningId(null); }
   }
   async function toggleHistory(id: string) {
@@ -581,12 +581,9 @@ function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: Sc
 }
 
 // Denetim sorunlarını GEO Checklist'e aktar
-function ExportToChecklist({ data }: { data: AuditData }) {
-  const [markets, setMarkets] = useState<MarketRow[] | null>(null);
-  const [marketId, setMarketId] = useState("");
+function ExportToChecklist({ data, siteId }: { data: AuditData; siteId?: string }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => { getMarkets().then((m) => { setMarkets(m); setMarketId(m[0]?.id ?? ""); }).catch(() => setMarkets([])); }, []);
   const items = useMemo(() => {
     const out: { title: string; descr: string; priority: string }[] = [];
     data.groups.forEach((g) => g.checks.forEach((c) => {
@@ -601,19 +598,24 @@ function ExportToChecklist({ data }: { data: AuditData }) {
     return out;
   }, [data]);
   async function run() {
+    if (!siteId) return;
     setBusy(true); setMsg(null);
-    try { const r = await addCustomTasks(marketId, items); setMsg(r.ok ? `${r.count} sorun görev takibine eklendi ✓` : (r.error || "Hata")); }
+    try { const r = await addCustomTasks(siteId, items); setMsg(r.ok ? `${r.count} sorun görev takibine eklendi ✓` : (r.error || "Hata")); }
     catch { setMsg("Aktarım hatası"); }
     finally { setBusy(false); }
   }
-  if (!markets || markets.length === 0) return null;
+  // Tek seferlik (kayıtsız) denetimde site yok → önce siteyi ekle
+  if (!siteId) {
+    return (
+      <div className="border border-surface-border rounded-bosch p-3 mb-6 text-xs text-ink-body">
+        Bu bulguları görev takibine aktarmak için siteyi <span className="font-medium text-ink">Takip edilen siteler</span> listesine ekleyip oradan tarayın.
+      </div>
+    );
+  }
   return (
     <div className="border border-surface-border rounded-bosch p-3 mb-6 flex flex-wrap items-center gap-2">
-      <span className="text-xs text-ink-body">Bu denetimin {items.length} sorununu görev takibine aktar:</span>
-      <select value={marketId} onChange={(e) => setMarketId(e.target.value)} className="rounded-bosch border border-surface-border bg-white px-2 py-1.5 text-xs text-ink outline-none">
-        {markets.map((m) => <option key={m.id} value={m.id}>{m.code.toUpperCase()} · {m.name}</option>)}
-      </select>
-      <button onClick={run} disabled={busy || items.length === 0} className="rounded-bosch bg-bosch-blue px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60">{busy ? "Aktarılıyor…" : "Aktar"}</button>
+      <span className="text-xs text-ink-body">Bu denetimin {items.length} sorununu bu sitenin görev takibine aktar:</span>
+      <button onClick={run} disabled={busy || items.length === 0} className="rounded-bosch bg-bosch-blue px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60">{busy ? "Aktarılıyor…" : "Görev takibine aktar"}</button>
       {msg && <span className="text-xs text-bosch-green">{msg}</span>}
     </div>
   );
@@ -627,8 +629,8 @@ export default function AuditTool() {
   const [filter, setFilter] = useState<Filter>("all");
   const [pending, start] = useTransition();
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [reportMeta, setReportMeta] = useState<{ diff?: ScanDiff; savedAt?: string } | null>(null);
-  const handleReport = (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string }) => { setRes(d); setReportMeta(meta ?? null); setFilter("all"); setError(null); typeof window !== "undefined" && window.scrollTo({ top: 0 }); };
+  const [reportMeta, setReportMeta] = useState<{ diff?: ScanDiff; savedAt?: string; siteId?: string } | null>(null);
+  const handleReport = (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string; siteId?: string }) => { setRes(d); setReportMeta(meta ?? null); setFilter("all"); setError(null); typeof window !== "undefined" && window.scrollTo({ top: 0 }); };
 
   function run(e: React.FormEvent) {
     e.preventDefault();
@@ -735,7 +737,7 @@ export default function AuditTool() {
               ) : <span className="text-ink-body">İlk tarama kaydedildi — sonraki taramada karşılaştırma çıkacak.</span>}
             </div>
           )}
-          {filter === "all" && <ExportToChecklist data={res} />}
+          {filter === "all" && <ExportToChecklist data={res} siteId={reportMeta?.siteId} />}
 
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">

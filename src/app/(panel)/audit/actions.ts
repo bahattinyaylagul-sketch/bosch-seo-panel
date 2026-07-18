@@ -50,6 +50,48 @@ export interface AuditData {
   seoPlan?: SeoActionPlan | null; // AI ile deterministik bulgulardan öncelikli aksiyon planı
   crawlSummary?: { pages: number; ok: number; broken: number; redirected: number };
   infoCount?: number; // "Bilgi/Notice" satır sayısı
+  scores?: { key: string; label: string; value: number; group: string }[]; // 8 ana kategori skoru (0-100)
+}
+
+// Mevcut tüm kontrolleri 8 ana kategoriye eşleyip 0-100 skor üretir (deterministik + AI harmanı)
+function computeCategoryScores(groups: CheckGroup[], ai: AiAnalysis | null): { key: string; label: string; value: number; group: string }[] {
+  const b: Record<string, Check[]> = { tech: [], crawl: [], index: [], onpage: [], linking: [], content: [], semantic: [], geo: [] };
+  for (const g of groups) for (const c of g.checks) {
+    if (c.info) continue;
+    const L = c.label;
+    if (/HTTPS|TTFB|Sıkıştırma|HTML boyutu|HSTS|X-Content|viewport|Tema rengi|Dokunmatik|Responsive/i.test(L)) b.tech.push(c);
+    else if (/robots\.txt|Sitemap|Kırık link|Yönlendirme zinciri|Erişilemeyen|Yönlendirilen/i.test(L)) b.crawl.push(c);
+    else if (/İndekslenebilir|noindex|Canonical|HTTP durumu/i.test(L)) b.index.push(c);
+    else if (/İç bağlantı|hreflang/i.test(L)) b.linking.push(c);
+    else if (/İçerik uzunluğu|Zayıf içerik|İçerik derinliği/i.test(L)) b.content.push(c);
+    else if (/şema|schema|JSON-LD|Organization|Product|Breadcrumb|SSS|FAQ|Yapısal/i.test(L)) b.semantic.push(c);
+    else if (/Open Graph|Twitter|Client-side|AI bot|llms/i.test(L)) b.geo.push(c);
+    else b.onpage.push(c);
+  }
+  const ratio = (arr: Check[]): number | null => {
+    if (!arr.length) return null;
+    const pass = arr.filter((c) => c.status === "pass").length;
+    const warn = arr.filter((c) => c.status === "warn").length;
+    return Math.round((100 * (pass + warn * 0.5)) / arr.length);
+  };
+  const avg = (dims: { score: number }[] | undefined): number | null => (dims && dims.length ? Math.round(dims.reduce((a, d) => a + d.score, 0) / dims.length) : null);
+  const blend = (a: number | null, bb: number | null): number => {
+    const xs = [a, bb].filter((v): v is number => v != null);
+    return xs.length ? Math.round(xs.reduce((s, v) => s + v, 0) / xs.length) : 0;
+  };
+  const contentAI = ai ? avg(ai.contentQuality) : null;
+  const semanticAI = ai ? avg([...(ai.contentQuality || []).filter((d) => /semantic|topical/i.test(d.key)), ...(ai.geo || []).filter((d) => /entity/i.test(d.key))]) : null;
+  const geoAI = ai ? avg([...(ai.aiVisibility || []), ...(ai.geo || [])]) : null;
+  return [
+    { key: "tech", label: "Teknik Sağlık", value: ratio(b.tech) ?? 100, group: "tech" },
+    { key: "crawl", label: "Tarama Sağlığı", value: ratio(b.crawl) ?? 100, group: "tech" },
+    { key: "index", label: "İndekslenebilirlik", value: ratio(b.index) ?? 100, group: "tech" },
+    { key: "onpage", label: "Sayfa İçi SEO", value: ratio(b.onpage) ?? 100, group: "onpage" },
+    { key: "linking", label: "İç Bağlantı", value: ratio(b.linking) ?? 100, group: "onpage" },
+    { key: "content", label: "İçerik Kalitesi", value: blend(ratio(b.content), contentAI), group: "onpage" },
+    { key: "semantic", label: "Semantik SEO", value: blend(ratio(b.semantic), semanticAI), group: "geo" },
+    { key: "geo", label: "AI Görünürlük / GEO", value: blend(ratio(b.geo), geoAI), group: "geo" },
+  ];
 }
 export type AuditResponse = { ok: true; data: AuditData } | { ok: false; error: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -923,6 +965,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const total = scorable.length || 1;
   const health = Math.round((100 * (passes + warnings * 0.5)) / total);
   const infoCount = allChecks.filter((c) => c.info).length;
+  const scores = computeCategoryScores(groups, ai);
   const crawlSummary = site
     ? {
         pages: site.pages.length,
@@ -956,6 +999,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       seoPlan,
       crawlSummary,
       infoCount,
+      scores,
     },
   };
 }

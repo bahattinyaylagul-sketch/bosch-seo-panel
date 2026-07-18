@@ -692,23 +692,20 @@ export default function AuditTool() {
           </div>
           {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
 
-          {/* ── Tematik Raporlar ── */}
-          <div className="border border-surface-border rounded-bosch p-4 mb-6">
-            <div className="text-xs font-semibold text-ink mb-3">Tematik Raporlar</div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-              {res.groups.map((g) => {
-                const sc = g.checks.filter((c) => !c.info);
-                const pass = sc.filter((c) => c.status === "pass").length;
-                const pct = Math.round((100 * pass) / (sc.length || 1));
-                return (
-                  <button key={g.id} onClick={() => scrollToGroup(g.id)} className="flex items-center gap-2.5 rounded-bosch border border-surface-border p-2.5 hover:bg-surface-muted transition-colors text-left">
-                    <Ring value={pct} size={38} stroke={4} />
-                    <span className="min-w-0"><span className="block text-xs font-medium text-ink truncate">{g.title.split(" · ")[0]}</span><span className="text-[11px] text-ink-body">%{pct} sağlıklı</span></span>
+          {/* ── 8 ANA SKOR ── */}
+          {res.scores && res.scores.length > 0 && (
+            <div className="mb-6">
+              <div className="text-sm font-semibold text-ink mb-2">Skorlar <span className="text-ink-body font-normal">· 8 ana boyut</span></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {res.scores.map((s) => (
+                  <button key={s.key} onClick={() => scrollToGroup(s.group)} className="border border-surface-border rounded-bosch p-4 flex flex-col items-center text-center hover:bg-surface-muted transition-colors">
+                    <Ring value={s.value} size={68} stroke={7} />
+                    <div className="text-xs font-medium text-ink mt-2 leading-tight">{s.label}</div>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ── SEO AKSİYON PLANI (AI) ── */}
           {filter === "all" && res.seoPlan && <SeoPlan plan={res.seoPlan} />}

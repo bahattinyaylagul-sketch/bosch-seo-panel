@@ -692,68 +692,23 @@ export default function AuditTool() {
           </div>
           {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
 
-          {/* ── Taranan sayfalar + Tematik raporlar ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
-            {res.crawlSummary && (() => {
-              const cs = res.crawlSummary; const tot = cs.pages || 1;
-              return (
-                <div className="border border-surface-border rounded-bosch p-4">
-                  <div className="text-xs font-semibold text-ink mb-1">Taranan Sayfalar</div>
-                  <div className="text-2xl font-semibold text-ink mb-2">{cs.pages}</div>
-                  <div className="h-2.5 w-full rounded-bosch overflow-hidden flex bg-surface-border mb-2">
-                    <div style={{ width: `${(100 * cs.ok) / tot}%`, background: GREEN }} />
-                    <div style={{ width: `${(100 * cs.redirected) / tot}%`, background: BLUE }} />
-                    <div style={{ width: `${(100 * cs.broken) / tot}%`, background: RED }} />
-                  </div>
-                  <div className="flex flex-col gap-0.5 text-[11px]">
-                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: GREEN }}>●</span> Sağlıklı (200)</span><span className="text-ink font-medium">{cs.ok}</span></span>
-                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: BLUE }}>●</span> Yönlendirme</span><span className="text-ink font-medium">{cs.redirected}</span></span>
-                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: RED }}>●</span> Hatalı (4xx/5xx)</span><span className="text-ink font-medium">{cs.broken}</span></span>
-                  </div>
-                </div>
-              );
-            })()}
-            <div className={`border border-surface-border rounded-bosch p-4 ${res.crawlSummary ? "lg:col-span-2" : "lg:col-span-3"}`}>
-              <div className="text-xs font-semibold text-ink mb-3">Tematik Raporlar</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {res.groups.map((g) => {
-                  const sc = g.checks.filter((c) => !c.info);
-                  const pass = sc.filter((c) => c.status === "pass").length;
-                  const pct = Math.round((100 * pass) / (sc.length || 1));
-                  return (
-                    <button key={g.id} onClick={() => scrollToGroup(g.id)} className="flex items-center gap-2.5 rounded-bosch border border-surface-border p-2.5 hover:bg-surface-muted transition-colors text-left">
-                      <Ring value={pct} size={38} stroke={4} />
-                      <span className="min-w-0"><span className="block text-xs font-medium text-ink truncate">{g.title.split(" · ")[0]}</span><span className="text-[11px] text-ink-body">%{pct} sağlıklı</span></span>
-                    </button>
-                  );
-                })}
-              </div>
+          {/* ── Tematik Raporlar ── */}
+          <div className="border border-surface-border rounded-bosch p-4 mb-6">
+            <div className="text-xs font-semibold text-ink mb-3">Tematik Raporlar</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {res.groups.map((g) => {
+                const sc = g.checks.filter((c) => !c.info);
+                const pass = sc.filter((c) => c.status === "pass").length;
+                const pct = Math.round((100 * pass) / (sc.length || 1));
+                return (
+                  <button key={g.id} onClick={() => scrollToGroup(g.id)} className="flex items-center gap-2.5 rounded-bosch border border-surface-border p-2.5 hover:bg-surface-muted transition-colors text-left">
+                    <Ring value={pct} size={38} stroke={4} />
+                    <span className="min-w-0"><span className="block text-xs font-medium text-ink truncate">{g.title.split(" · ")[0]}</span><span className="text-[11px] text-ink-body">%{pct} sağlıklı</span></span>
+                  </button>
+                );
+              })}
             </div>
           </div>
-
-          {/* ── İLK DÜZELTİLECEKLER ── */}
-          {topFixes.length > 0 && filter === "all" && (
-            <div className="mb-6">
-              <div className="text-sm font-semibold text-ink mb-2">İlk düzeltilecekler <span className="text-ink-body font-normal">· en çok sayfa etkileyen {topFixes.length} kritik sorun</span></div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {topFixes.map((f, i) => (
-                  <button key={i} onClick={() => scrollToGroup(f.gid)} className="group text-left rounded-bosch border border-surface-border bg-white hover:border-bosch-red/40 hover:shadow-sm transition-all overflow-hidden flex">
-                    <span className="w-1 shrink-0 bg-bosch-red" />
-                    <span className="flex-1 min-w-0 p-3">
-                      <span className="flex items-center justify-between gap-2 mb-1">
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="h-5 w-5 shrink-0 rounded-full bg-bosch-red/10 text-bosch-red text-[11px] font-semibold flex items-center justify-center">{i + 1}</span>
-                          <span className="text-sm font-medium text-ink truncate">{f.c.label}</span>
-                        </span>
-                        {f.c.urls && f.c.urls.length > 0 && <span className="shrink-0 rounded-bosch bg-bosch-red/10 text-bosch-red text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">{f.c.urls.length} sayfa</span>}
-                      </span>
-                      <span className="block text-xs text-ink-body line-clamp-2 pl-7">{f.c.detail}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* ── SEO AKSİYON PLANI (AI) ── */}
           {filter === "all" && res.seoPlan && <SeoPlan plan={res.seoPlan} />}

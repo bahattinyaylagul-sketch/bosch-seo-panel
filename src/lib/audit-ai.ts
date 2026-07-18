@@ -4,6 +4,10 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 // Yapılandırılan model geçersiz/erişilemezse denenecek bilinen çalışan modeller
 const FALLBACK_MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
 
+// Çıktı dili — seçili panel diline göre AI yanıt dili
+const LANG_NAME: Record<string, string> = { tr: "Türkçe", en: "English", de: "Deutsch", fr: "Français", es: "Español" };
+const langName = (loc?: string): string => LANG_NAME[(loc || "tr").toLowerCase()] || "Türkçe";
+
 export interface ScoredDim {
   key: string;
   label: string;
@@ -37,8 +41,9 @@ export async function analyzeContentAI(input: {
   metaDescription: string;
   pageText: string;
   siteStats?: string; // site geneli agregat bulgular (yüzdeler) — verilirse tüm site yorumlanır
-}, opts?: { model?: string; diag?: { error?: string } }): Promise<AiAnalysis | null> {
+}, opts?: { model?: string; diag?: { error?: string }; locale?: string }): Promise<AiAnalysis | null> {
   const diag = opts?.diag;
+  const LANG = langName(opts?.locale);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) { if (diag) diag.error = "ANTHROPIC_API_KEY tanımlı değil — Vercel ortam değişkenlerine ekleyip yeniden deploy edin."; return null; }
 
@@ -51,7 +56,8 @@ export async function analyzeContentAI(input: {
     "Sen kıdemli bir SEO + GEO (Generative Engine Optimization) analistisin.",
     "Sana bir web sayfasının başlığı, meta açıklaması ve görünür metni verilecek.",
     "Bu içeriği KLASİK SEO ve AI/LLM görünürlüğü açısından değerlendir.",
-    "Her boyut için 0-100 arası bir skor ve TEK cümlelik kısa, somut Türkçe not ver.",
+    `ÖNEMLİ: Tüm metinsel çıktıyı (summary ve tüm note alanları) SADECE ${LANG} dilinde yaz. Skor sayıları ve JSON anahtarları aynı kalsın.`,
+    `Her boyut için 0-100 arası bir skor ve TEK cümlelik kısa, somut ${LANG} not ver.`,
     "Skorlar gerçekçi olsun; içerik zayıfsa düşük ver. Abartma.",
     "SADECE verilen sayfa metnine, başlığa ve meta açıklamaya dayan. Verilmeyen hiçbir bilgiyi (trafik, sıralama, backlink, rakip, tarih, istatistik, URL) üretme; bilmiyorsan alanı boş bırak. Yanıtı SADECE geçerli JSON olarak ver.",
     input.siteStats
@@ -60,7 +66,7 @@ export async function analyzeContentAI(input: {
     "SADECE şu JSON şemasıyla yanıt ver, başka hiçbir metin ekleme:",
     JSON.stringify({
       overall: "number 0-100",
-      summary: "string (1-2 cümle genel değerlendirme, Türkçe)",
+      summary: `string (1-2 cümle genel değerlendirme, ${LANG})`,
       contentQuality: {
         searchIntent: { score: "number", note: "string" },
         topicalCoverage: { score: "number", note: "string" },
@@ -193,12 +199,13 @@ export interface SeoAction { title: string; why: string; priority: "yüksek" | "
 export interface SeoActionPlan { summary: string; actions: SeoAction[] }
 export async function analyzeSeoActionPlan(
   input: { url: string; findings: string },
-  opts?: { model?: string }
+  opts?: { model?: string; locale?: string }
 ): Promise<SeoActionPlan | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   if (!input.findings || input.findings.trim().length < 10) return null;
   const model = opts?.model || MODEL;
+  const LANG = langName(opts?.locale);
   const client = new Anthropic({ apiKey });
   const system = [
     "Sen kıdemli bir teknik SEO danışmanısın.",
@@ -206,7 +213,7 @@ export async function analyzeSeoActionPlan(
     "Bu bulguları YORUMLA ve öncelikli, uygulanabilir bir aksiyon planı çıkar.",
     "Yeni sayı, URL, istatistik, trafik veya sıralama verisi ÜRETME. Sadece verilen bulgulara dayan; bilmiyorsan uydurma.",
     "Aynı kök nedene işaret eden bulguları grupla (ör. şablon/template kaynaklı toplu eksiklik). En fazla 7 aksiyon.",
-    "Her aksiyona öncelik ata: 'yüksek' | 'orta' | 'düşük'. Türkçe yaz.",
+    `Her aksiyona öncelik ata; öncelik değerleri MUTLAKA şu Türkçe kelimeler olsun: 'yüksek' | 'orta' | 'düşük'. Ama title ve why alanlarındaki tüm açıklama metinlerini SADECE ${LANG} dilinde yaz.`,
     "SADECE şu JSON ile yanıt ver, başka hiçbir metin ekleme:",
     JSON.stringify({ summary: "string (1-2 cümle genel durum)", actions: [{ title: "string", why: "string (neden önemli / hangi bulgudan)", priority: "yüksek|orta|düşük" }] }),
   ].join("\n");

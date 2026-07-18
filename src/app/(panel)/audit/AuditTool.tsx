@@ -809,6 +809,25 @@ export default function AuditTool() {
                 <Ring value={res.ai.overall} size={96} stroke={9} />
                 <div><div className="text-base font-semibold text-ink mb-0.5">Genel AI/GEO skoru</div><p className="text-xs text-ink-body leading-relaxed">{res.ai.summary}</p></div>
               </div>
+              {/* Kategori özet dashboard'u */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                {[
+                  { label: "İçerik & Semantik", dims: res.ai.contentQuality },
+                  { label: "E-E-A-T", dims: res.ai.eeat },
+                  { label: "AI Görünürlüğü", dims: res.ai.aiVisibility },
+                  { label: "GEO", dims: res.ai.geo },
+                ].map((c) => {
+                  const avg = Math.round(c.dims.reduce((s, d) => s + d.score, 0) / (c.dims.length || 1));
+                  const weak = c.dims.filter((d) => d.score < 60).length;
+                  return (
+                    <div key={c.label} className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center text-center min-h-[132px]">
+                      <Ring value={avg} size={64} stroke={7} />
+                      <div className="text-xs font-semibold text-ink mt-2">{c.label}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: weak > 0 ? RED : GREEN }}>{weak > 0 ? `${weak} boyut zayıf` : "tümü iyi ✓"}</div>
+                    </div>
+                  );
+                })}
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                 <AiSection title="İçerik Kalitesi & Semantik SEO" dims={res.ai.contentQuality} />
                 <AiSection title="E-E-A-T (Otorite & Güven)" dims={res.ai.eeat} />

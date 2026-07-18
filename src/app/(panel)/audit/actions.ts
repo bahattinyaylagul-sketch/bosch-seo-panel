@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { analyzeContentAI, analyzeSeoActionPlan, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
+import { getLocale } from "@/lib/i18n-server";
 // ─────────────────────────────────────────────────────────────────────────────
 // v2 MOTOR — Site geneli bulgular kategorilere dağıtıldı (Screaming Frog tarzı)
 // - Her kontrol etkilenen URL listesini taşır (URL_CAP ile sınırlı)
@@ -1001,9 +1002,11 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const siteStats = site ? buildSiteAgg(site.pages) : undefined;
   const seoFindings = buildSeoFindings(groups);
   const aiDiag: { error?: string } = {};
+  let locale = "tr";
+  try { locale = getLocale(); } catch { /* cookie yoksa tr */ }
   const [ai, seoPlan] = await Promise.all([
-    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text, siteStats }, { model: geoModel, diag: aiDiag }).catch((e) => { aiDiag.error = "AI çağrısı başarısız: " + String(e?.message || e).slice(0, 160); return null; }),
-    analyzeSeoActionPlan({ url: lh.finalUrl, findings: seoFindings }, { model: geoModel }).catch(() => null),
+    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text, siteStats }, { model: geoModel, diag: aiDiag, locale }).catch((e) => { aiDiag.error = "AI çağrısı başarısız: " + String(e?.message || e).slice(0, 160); return null; }),
+    analyzeSeoActionPlan({ url: lh.finalUrl, findings: seoFindings }, { model: geoModel, locale }).catch(() => null),
   ]);
   const aiError = ai ? undefined : (aiDiag.error || "AI/GEO analizi yapılamadı.");
   // 5) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0

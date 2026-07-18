@@ -692,20 +692,6 @@ export default function AuditTool() {
           </div>
           {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
 
-          {/* ── 8 ANA SKOR ── */}
-          {res.scores && res.scores.length > 0 && (
-            <div className="mb-6">
-              <div className="text-sm font-semibold text-ink mb-2">Skorlar <span className="text-ink-body font-normal">· 8 ana boyut</span></div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {res.scores.map((s) => (
-                  <button key={s.key} onClick={() => scrollToGroup(s.group)} className="border border-surface-border rounded-bosch p-4 flex flex-col items-center text-center hover:bg-surface-muted transition-colors">
-                    <Ring value={s.value} size={68} stroke={7} />
-                    <div className="text-xs font-medium text-ink mt-2 leading-tight">{s.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* ── SEO AKSİYON PLANI (AI) ── */}
           {filter === "all" && res.seoPlan && <SeoPlan plan={res.seoPlan} />}

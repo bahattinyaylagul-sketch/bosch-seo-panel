@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition } from "react";
-import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff } from "./actions";
+import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { useT } from "@/components/LangProvider";
 
@@ -57,6 +57,40 @@ function Ring({ value, size = 60, stroke = 6, hex, label }: { value: number; siz
         {label && <span className="text-ink-body mt-0.5" style={{ fontSize: size * 0.13 }}>{label}</span>}
       </div>
     </div>
+  );
+}
+
+function HalfGauge({ value, hex }: { value: number; hex: string }) {
+  const circ = Math.PI * 52;
+  const off = circ * (1 - Math.max(0, Math.min(100, value)) / 100);
+  return (
+    <div className="relative" style={{ width: 130, height: 76 }}>
+      <svg width={130} height={76} viewBox="0 0 120 70">
+        <path d="M8 62 A52 52 0 0 1 112 62" fill="none" stroke="#E8EAED" strokeWidth="11" strokeLinecap="round" />
+        <path d="M8 62 A52 52 0 0 1 112 62" fill="none" stroke={hex} strokeWidth="11" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} />
+      </svg>
+      <div className="absolute inset-0 flex items-end justify-center pb-1">
+        <span className="text-2xl font-semibold" style={{ color: hex }}>{value}%</span>
+      </div>
+    </div>
+  );
+}
+
+function BigStat({ label, value, hex, sub, active, onClick }: { label: string; value: number; hex: string; sub?: string; active?: boolean; onClick?: () => void }) {
+  const cls = "rounded-bosch border p-4 text-left transition-all";
+  const inner = (
+    <>
+      <div className="text-xs text-ink-body mb-1">{label}</div>
+      <div className="text-3xl font-semibold leading-none" style={{ color: hex }}>{value}</div>
+      {sub && <div className="text-[11px] text-ink-body/70 mt-1.5">{sub}</div>}
+    </>
+  );
+  if (!onClick) return <div className={`${cls} border-surface-border`}>{inner}</div>;
+  return (
+    <button onClick={onClick} className={`${cls} ${active ? "ring-2 ring-offset-1" : "hover:bg-surface-muted"}`}
+      style={{ borderColor: active ? hex : "#E0E2E5", ...(active ? ({ ["--tw-ring-color" as any]: hex }) : {}) }}>
+      {inner}
+    </button>
   );
 }
 
@@ -401,15 +435,40 @@ function SeoPlan({ plan }: { plan: NonNullable<AuditData["seoPlan"]> }) {
   );
 }
 
+const LOADER_STEPS = [
+  "Sayfa çekiliyor ve ayrıştırılıyor",
+  "Hız ölçülüyor (Google Lighthouse)",
+  "Teknik SEO, görseller ve GEO denetleniyor",
+  "Site geneli taranıyor (sitemap URL'leri)",
+  "AI ile içerik & GEO analizi yapılıyor",
+];
+
+// Tarama sırasında Bosch supergraphic akışlı bar + dönen adım metni
+function ScanBar() {
+  const [i, setI] = useState(0);
+  useEffect(() => { const id = setInterval(() => setI((p) => (p + 1) % LOADER_STEPS.length), 3000); return () => clearInterval(id); }, []);
+  return (
+    <div className="mt-3">
+      <div className="h-1.5 w-full rounded-bosch overflow-hidden bg-surface-border relative">
+        <div className="absolute inset-y-0 bosch-shimmer" style={{ width: "40%", background: "linear-gradient(90deg,#E2001A,#ED0007,#B90276,#50237F,#007BC0,#00A8B0,#78BE20)" }} />
+      </div>
+      <div className="text-[11px] text-ink-body mt-1.5">{LOADER_STEPS[i]}</div>
+      <style>{`@keyframes boschshim{0%{left:-40%}100%{left:100%}} .bosch-shimmer{animation:boschshim 1.5s linear infinite}`}</style>
+    </div>
+  );
+}
+
 // ── Site Takibi: kalıcı site listesi + geçmişe göre "düzelen/yeni/devam" ────
-function SiteTracker({ onReport }: { onReport: (d: AuditData) => void }) {
+function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string }) => void }) {
   const [sites, setSites] = useState<AuditSite[] | null>(null);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [scanningId, setScanningId] = useState<string | null>(null);
-  const [diffs, setDiffs] = useState<Record<string, ScanDiff>>({});
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [historyOf, setHistoryOf] = useState<string | null>(null);
+  const [histories, setHistories] = useState<Record<string, ScanRow[]>>({});
 
   const load = () => { listAuditSites().then(setSites).catch(() => setSites([])); };
   useEffect(() => { load(); }, []);
@@ -422,16 +481,31 @@ function SiteTracker({ onReport }: { onReport: (d: AuditData) => void }) {
   async function del(id: string) { await deleteAuditSite(id); load(); }
   async function scan(id: string) {
     setScanningId(id); setErr(null);
-    try { const r = await runSiteScan(id); if (r.ok) { setDiffs((d) => ({ ...d, [id]: r.diff })); onReport(r.data); load(); } else setErr(r.error); }
+    try { const r = await runSiteScan(id); if (r.ok) { onReport(r.data, { diff: r.diff }); load(); } else setErr(r.error); }
     catch { setErr("Tarama sırasında hata"); }
     finally { setScanningId(null); }
+  }
+  async function openLatest(s: AuditSite) {
+    setOpeningId(s.id); setErr(null);
+    try { const d = await getLatestScanReport(s.id); if (d) onReport(d, { savedAt: s.last?.created_at }); else setErr("Kayıtlı rapor yok — önce tarayın."); }
+    finally { setOpeningId(null); }
+  }
+  async function openScan(row: ScanRow) {
+    setOpeningId(row.id); setErr(null);
+    try { const d = await getScanReport(row.id); if (d) onReport(d, { savedAt: row.created_at }); else setErr("Rapor bulunamadı."); }
+    finally { setOpeningId(null); }
+  }
+  async function toggleHistory(id: string) {
+    if (historyOf === id) { setHistoryOf(null); return; }
+    setHistoryOf(id);
+    if (!histories[id]) { const rows = await getScanHistory(id); setHistories((h) => ({ ...h, [id]: rows })); }
   }
   const fmt = (s: string) => { try { return new Date(s).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return s; } };
 
   return (
-    <div className="border border-surface-border rounded-bosch p-5 mb-6">
+    <div>
       <div className="text-base font-semibold text-ink mb-1">Takip edilen siteler</div>
-      <p className="text-xs text-ink-body mb-4">Site ekleyin, düzenli tarayın. Her taramada bir öncekine göre <span className="text-bosch-green font-medium">düzelen</span>, <span className="text-bosch-red font-medium">yeni</span> ve devam eden sorunları görün.</p>
+      <p className="text-xs text-ink-body mb-4">Site ekleyin, düzenli tarayın. <b>Rapor</b> ile son kayıtlı denetimi açın; <b>Geçmiş</b> ile eski taramaları görün. Her taramada bir öncekine göre <span className="text-bosch-green font-medium">düzelen</span> / <span className="text-bosch-red font-medium">yeni</span> sorunlar hesaplanır.</p>
 
       <form onSubmit={add} className="flex flex-col sm:flex-row gap-2 mb-4">
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://site.com/tr/" className="flex-1 rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue" />
@@ -445,36 +519,39 @@ function SiteTracker({ onReport }: { onReport: (d: AuditData) => void }) {
       ) : sites.length === 0 ? (
         <p className="text-xs text-ink-body">Henüz takip edilen site yok. Yukarıdan bir URL ekleyin.</p>
       ) : (
-        <div className="border border-surface-border rounded-bosch divide-y divide-surface-border">
+        <div className="grid grid-cols-1 gap-3">
           {sites.map((s) => {
-            const d = diffs[s.id];
             const scanning = scanningId === s.id;
+            const opening = openingId === s.id;
+            const hist = histories[s.id];
             return (
-              <div key={s.id} className="px-4 py-3">
+              <div key={s.id} className="border border-surface-border rounded-bosch p-4">
                 <div className="flex items-center gap-3">
-                  {s.last ? <Ring value={s.last.health} size={40} stroke={4} hex={healthHex(s.last.health)} /> : <span className="h-10 w-10 shrink-0 rounded-full border border-surface-border flex items-center justify-center text-[10px] text-ink-body">—</span>}
+                  {scanning ? <span className="h-11 w-11 shrink-0 rounded-full border-[3px] border-surface-border border-t-bosch-red animate-spin" /> : s.last ? <Ring value={s.last.health} size={44} stroke={4} hex={healthHex(s.last.health)} /> : <span className="h-11 w-11 shrink-0 rounded-full border border-surface-border flex items-center justify-center text-[10px] text-ink-body">—</span>}
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-ink font-medium truncate">{s.name || s.url}</div>
+                    <div className="text-sm text-ink font-semibold truncate">{s.name || s.url}</div>
                     <div className="text-xs text-ink-body break-all">{s.url}</div>
-                    {s.last && <div className="text-[11px] text-ink-body/70">Son tarama: {fmt(s.last.created_at)} · {s.last.errors} hata · {s.last.warnings} uyarı</div>}
+                    {s.last ? <div className="text-[11px] text-ink-body/70">Son tarama: {fmt(s.last.created_at)} · {s.last.errors} hata · {s.last.warnings} uyarı</div> : <div className="text-[11px] text-ink-body/70">Henüz taranmadı</div>}
                   </div>
-                  <button onClick={() => scan(s.id)} disabled={scanning} className="rounded-bosch bg-bosch-red px-3 py-1.5 text-xs font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60 whitespace-nowrap">{scanning ? "Taranıyor… (1-3 dk)" : s.last ? "Tekrar tara" : "Tara"}</button>
-                  <button onClick={() => del(s.id)} className="text-xs text-ink-body hover:text-bosch-red">Sil</button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {s.last && <button onClick={() => openLatest(s)} disabled={opening} className="rounded-bosch border border-bosch-blue text-bosch-blue px-3 py-1.5 text-xs font-medium hover:bg-bosch-blue/5 transition-colors disabled:opacity-60 whitespace-nowrap">{opening ? "Açılıyor…" : "Rapor"}</button>}
+                    <button onClick={() => scan(s.id)} disabled={scanning} className="rounded-bosch bg-bosch-red px-3 py-1.5 text-xs font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60 whitespace-nowrap">{scanning ? "Taranıyor…" : s.last ? "Yeniden tara" : "Tara"}</button>
+                    {s.last && <button onClick={() => toggleHistory(s.id)} className="text-xs text-ink-body hover:text-ink whitespace-nowrap">Geçmiş</button>}
+                    <button onClick={() => del(s.id)} className="text-xs text-ink-body/60 hover:text-bosch-red">Sil</button>
+                  </div>
                 </div>
-                {d && (
-                  <div className="mt-3 ml-13 rounded-bosch bg-surface-muted p-3 text-xs">
-                    {d.hasPrev ? (
-                      <div className="flex flex-wrap gap-3">
-                        <span className="text-bosch-green font-medium">✓ {d.fixed} sorun düzeldi</span>
-                        <span className="text-bosch-red font-medium">＋ {d.newer} yeni sorun</span>
-                        <span className="text-ink-body">• {d.ongoing} devam eden</span>
-                      </div>
-                    ) : (
-                      <span className="text-ink-body">İlk tarama kaydedildi — sonraki taramada karşılaştırma çıkacak.</span>
-                    )}
-                    {d.fixedItems.length > 0 && <div className="mt-1.5 text-ink-body">Düzelenler: {d.fixedItems.slice(0, 5).map((i) => i.label).join(", ")}{d.fixedItems.length > 5 ? "…" : ""}</div>}
-                    {d.newItems.length > 0 && <div className="mt-0.5 text-ink-body">Yeni: {d.newItems.slice(0, 5).map((i) => i.label).join(", ")}{d.newItems.length > 5 ? "…" : ""}</div>}
-                    <div className="mt-1.5 text-bosch-blue">↓ Tam rapor aşağıda</div>
+                {scanning && <ScanBar />}
+                {historyOf === s.id && (
+                  <div className="mt-3 border border-surface-border rounded-bosch divide-y divide-surface-border">
+                    {!hist ? <div className="px-3 py-2 text-xs text-ink-body">Yükleniyor…</div> : hist.length === 0 ? <div className="px-3 py-2 text-xs text-ink-body">Kayıt yok.</div> : hist.map((row) => (
+                      <button key={row.id} onClick={() => openScan(row)} disabled={openingId === row.id} className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface-muted transition-colors disabled:opacity-60">
+                        <span className="text-sm font-semibold w-8" style={{ color: healthHex(row.health) }}>{row.health}</span>
+                        <span className="text-xs text-ink flex-1">{fmt(row.created_at)}</span>
+                        <span className="text-xs text-bosch-red">{row.errors} hata</span>
+                        <span className="text-xs text-amber-600">{row.warnings} uyarı</span>
+                        <span className="text-xs text-bosch-blue">{openingId === row.id ? "Açılıyor…" : "Aç →"}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -494,14 +571,16 @@ export default function AuditTool() {
   const [filter, setFilter] = useState<Filter>("all");
   const [pending, start] = useTransition();
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [reportMeta, setReportMeta] = useState<{ diff?: ScanDiff; savedAt?: string } | null>(null);
+  const handleReport = (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string }) => { setRes(d); setReportMeta(meta ?? null); setFilter("all"); setError(null); typeof window !== "undefined" && window.scrollTo({ top: 0 }); };
 
   function run(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setRes(null); setFilter("all");
+    setError(null); setRes(null); setReportMeta(null); setFilter("all");
     start(async () => {
       try {
         const r = await auditSite(url);
-        if (r.ok) setRes(r.data); else setError(r.error);
+        if (r.ok) { setRes(r.data); setReportMeta(null); } else setError(r.error);
       } catch (err) { setError(err instanceof Error ? err.message : t("au.error")); }
     });
   }
@@ -557,42 +636,97 @@ export default function AuditTool() {
 
   return (
     <div>
-      <SiteTracker onReport={(d) => { setRes(d); setFilter("all"); setError(null); }} />
+      {!res && !pending && (
+        <>
+          <SiteTracker onReport={handleReport} />
+          <div className="mt-8 pt-6 border-t border-surface-border">
+            <div className="text-sm font-semibold text-ink mb-1">Tek seferlik denetim</div>
+            <p className="text-xs text-ink-body mb-3">Kaydetmeden, tek bir URL için anlık denetim.</p>
+            <form onSubmit={run} className="flex flex-col sm:flex-row gap-3 mb-2">
+              <div className="flex-1">
+                <label className="block text-xs text-ink-body mb-1">{t("au.url")}</label>
+                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("au.placeholder")} className="w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue" />
+              </div>
+              <button type="submit" disabled={pending} className="self-stretch sm:self-end rounded-bosch bg-bosch-red px-5 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60 whitespace-nowrap">{t("au.button")}</button>
+            </form>
+            <p className="text-xs text-ink-body mb-2">{t("au.hint")}</p>
+            {error && <p className="text-sm text-bosch-red bg-white border border-bosch-red/30 rounded-bosch px-3 py-2">{error}</p>}
+          </div>
+        </>
+      )}
 
-      <div className="text-sm font-semibold text-ink mb-2">Tek seferlik denetim</div>
-      <form onSubmit={run} className="flex flex-col sm:flex-row gap-3 mb-2">
-        <div className="flex-1">
-          <label className="block text-xs text-ink-body mb-1">{t("au.url")}</label>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("au.placeholder")} className="w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue" />
-        </div>
-        <button type="submit" disabled={pending} className="self-stretch sm:self-end rounded-bosch bg-bosch-red px-5 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60 whitespace-nowrap">{pending ? t("au.running") : t("au.button")}</button>
-      </form>
-      <p className="text-xs text-ink-body mb-6">{t("au.hint")}</p>
-
-      {error && <p className="text-sm text-bosch-red bg-white border border-bosch-red/30 rounded-bosch px-3 py-2">{error}</p>}
       {pending && !res && <AuditLoader />}
 
       {res && (
         <div>
-          {/* ── SKOR BANDI ── */}
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <p className="text-xs text-ink-body break-all">{res.finalUrl}</p>
+          {/* ── ÜST BAR ── */}
+          <div className="flex items-center justify-between gap-4 mb-3">
+            <button onClick={() => { setRes(null); setReportMeta(null); }} className="text-sm text-bosch-blue hover:underline font-medium">← Sitelere dön</button>
             <button onClick={() => exportCsv(res)} className="shrink-0 rounded-bosch border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted transition-colors whitespace-nowrap">⬇ CSV dışa aktar</button>
           </div>
-          <div className="border border-surface-border rounded-bosch p-5 mb-4 flex flex-col sm:flex-row items-center gap-6">
-            <Ring value={res.health} size={132} stroke={12} hex={healthHex(res.health)} label="/ 100" />
-            <div className="flex-1 w-full">
-              <div className="text-base font-semibold text-ink mb-1">Site sağlık skoru</div>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {statusChips.map((ch, i) => (
-                  <span key={i} className="rounded-bosch text-[11px] px-2 py-0.5 font-medium" style={{ backgroundColor: (ch.status === "fail" ? RED : ch.status === "warn" ? AMBER : GREEN) + "1a", color: ch.status === "fail" ? RED : ch.status === "warn" ? "#B45309" : GREEN }}>{ch.label}</span>
-                ))}
-                {filter !== "all" && <button onClick={() => setFilter("all")} className="text-[11px] text-bosch-blue underline font-medium">Tümünü göster</button>}
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <StatChip label="Hata" value={res.counts.errors} hex={RED} active={filter === "fail"} onClick={() => toggle("fail")} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} />
-                <StatChip label="Uyarı" value={res.counts.warnings} hex={AMBER} active={filter === "warn"} onClick={() => toggle("warn")} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} />
-                <StatChip label="Başarılı" value={res.counts.passes} hex={GREEN} active={filter === "pass"} onClick={() => toggle("pass")} />
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <p className="text-xs text-ink-body break-all">{res.finalUrl}</p>
+            {reportMeta?.savedAt && <span className="shrink-0 rounded-bosch bg-surface-muted text-ink-body text-[11px] px-2 py-0.5">Kayıtlı rapor · {new Date(reportMeta.savedAt).toLocaleString("tr-TR")}</span>}
+          </div>
+          {reportMeta?.diff && (
+            <div className="rounded-bosch border border-surface-border bg-surface-muted p-3 mb-4 text-xs">
+              {reportMeta.diff.hasPrev ? (
+                <div className="flex flex-wrap gap-4">
+                  <span className="text-bosch-green font-medium">✓ {reportMeta.diff.fixed} sorun düzeldi</span>
+                  <span className="text-bosch-red font-medium">＋ {reportMeta.diff.newer} yeni sorun</span>
+                  <span className="text-ink-body">• {reportMeta.diff.ongoing} devam eden</span>
+                </div>
+              ) : <span className="text-ink-body">İlk tarama kaydedildi — sonraki taramada karşılaştırma çıkacak.</span>}
+            </div>
+          )}
+          {/* ── DASHBOARD: sağlık + sayaçlar ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+            <div className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center">
+              <div className="text-xs font-semibold text-ink self-start mb-1">Site Sağlığı</div>
+              <HalfGauge value={res.health} hex={healthHex(res.health)} />
+              <div className="text-[11px] text-ink-body mt-0.5">Hedef: 90+</div>
+            </div>
+            <BigStat label="Hata" value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
+            <BigStat label="Uyarı" value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
+            <BigStat label="Bilgi" value={res.infoCount ?? 0} hex={BLUE} />
+          </div>
+          {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
+
+          {/* ── Taranan sayfalar + Tematik raporlar ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
+            {res.crawlSummary && (() => {
+              const cs = res.crawlSummary; const tot = cs.pages || 1;
+              return (
+                <div className="border border-surface-border rounded-bosch p-4">
+                  <div className="text-xs font-semibold text-ink mb-1">Taranan Sayfalar</div>
+                  <div className="text-2xl font-semibold text-ink mb-2">{cs.pages}</div>
+                  <div className="h-2.5 w-full rounded-bosch overflow-hidden flex bg-surface-border mb-2">
+                    <div style={{ width: `${(100 * cs.ok) / tot}%`, background: GREEN }} />
+                    <div style={{ width: `${(100 * cs.redirected) / tot}%`, background: BLUE }} />
+                    <div style={{ width: `${(100 * cs.broken) / tot}%`, background: RED }} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 text-[11px]">
+                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: GREEN }}>●</span> Sağlıklı (200)</span><span className="text-ink font-medium">{cs.ok}</span></span>
+                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: BLUE }}>●</span> Yönlendirme</span><span className="text-ink font-medium">{cs.redirected}</span></span>
+                    <span className="flex items-center justify-between"><span className="text-ink-body"><span style={{ color: RED }}>●</span> Hatalı (4xx/5xx)</span><span className="text-ink font-medium">{cs.broken}</span></span>
+                  </div>
+                </div>
+              );
+            })()}
+            <div className={`border border-surface-border rounded-bosch p-4 ${res.crawlSummary ? "lg:col-span-2" : "lg:col-span-3"}`}>
+              <div className="text-xs font-semibold text-ink mb-3">Tematik Raporlar</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {res.groups.map((g) => {
+                  const sc = g.checks.filter((c) => !c.info);
+                  const pass = sc.filter((c) => c.status === "pass").length;
+                  const pct = Math.round((100 * pass) / (sc.length || 1));
+                  return (
+                    <button key={g.id} onClick={() => scrollToGroup(g.id)} className="flex items-center gap-2.5 rounded-bosch border border-surface-border p-2.5 hover:bg-surface-muted transition-colors text-left">
+                      <Ring value={pct} size={38} stroke={4} />
+                      <span className="min-w-0"><span className="block text-xs font-medium text-ink truncate">{g.title.split(" · ")[0]}</span><span className="text-[11px] text-ink-body">%{pct} sağlıklı</span></span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -600,13 +734,21 @@ export default function AuditTool() {
           {/* ── İLK DÜZELTİLECEKLER ── */}
           {topFixes.length > 0 && filter === "all" && (
             <div className="mb-6">
-              <div className="text-sm font-semibold text-ink mb-2">İlk düzeltilecekler</div>
+              <div className="text-sm font-semibold text-ink mb-2">İlk düzeltilecekler <span className="text-ink-body font-normal">· en çok sayfa etkileyen {topFixes.length} kritik sorun</span></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {topFixes.map((f, i) => (
-                  <button key={i} onClick={() => scrollToGroup(f.gid)} className="text-left border border-bosch-red/30 bg-bosch-red/5 rounded-bosch p-3 hover:bg-bosch-red/10 transition-colors">
-                    <div className="text-sm font-medium text-ink">{f.c.label}</div>
-                    <div className="text-xs text-ink-body line-clamp-2">{f.c.detail}</div>
-                    {f.c.urls && f.c.urls.length > 0 && <div className="mt-1 text-[11px] text-bosch-red font-medium">{f.c.urls.length} sayfa etkileniyor</div>}
+                  <button key={i} onClick={() => scrollToGroup(f.gid)} className="group text-left rounded-bosch border border-surface-border bg-white hover:border-bosch-red/40 hover:shadow-sm transition-all overflow-hidden flex">
+                    <span className="w-1 shrink-0 bg-bosch-red" />
+                    <span className="flex-1 min-w-0 p-3">
+                      <span className="flex items-center justify-between gap-2 mb-1">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="h-5 w-5 shrink-0 rounded-full bg-bosch-red/10 text-bosch-red text-[11px] font-semibold flex items-center justify-center">{i + 1}</span>
+                          <span className="text-sm font-medium text-ink truncate">{f.c.label}</span>
+                        </span>
+                        {f.c.urls && f.c.urls.length > 0 && <span className="shrink-0 rounded-bosch bg-bosch-red/10 text-bosch-red text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">{f.c.urls.length} sayfa</span>}
+                      </span>
+                      <span className="block text-xs text-ink-body line-clamp-2 pl-7">{f.c.detail}</span>
+                    </span>
                   </button>
                 ))}
               </div>

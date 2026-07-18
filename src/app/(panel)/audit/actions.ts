@@ -48,6 +48,8 @@ export interface AuditData {
   llmsTxt?: boolean;
   redirectChain?: { url: string; status: number }[];
   seoPlan?: SeoActionPlan | null; // AI ile deterministik bulgulardan öncelikli aksiyon planı
+  crawlSummary?: { pages: number; ok: number; broken: number; redirected: number };
+  infoCount?: number; // "Bilgi/Notice" satır sayısı
 }
 export type AuditResponse = { ok: true; data: AuditData } | { ok: false; error: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -913,12 +915,22 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
     analyzeSeoActionPlan({ url: lh.finalUrl, findings: seoFindings }, { model: geoModel }).catch(() => null),
   ]);
   // 5) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0
-  const scorable = groups.flatMap((g) => g.checks).filter((c) => !c.info);
+  const allChecks = groups.flatMap((g) => g.checks);
+  const scorable = allChecks.filter((c) => !c.info);
   const errors = scorable.filter((c) => c.status === "fail").length;
   const warnings = scorable.filter((c) => c.status === "warn").length;
   const passes = scorable.filter((c) => c.status === "pass").length;
   const total = scorable.length || 1;
   const health = Math.round((100 * (passes + warnings * 0.5)) / total);
+  const infoCount = allChecks.filter((c) => c.info).length;
+  const crawlSummary = site
+    ? {
+        pages: site.pages.length,
+        ok: site.pages.filter((p) => p.status >= 200 && p.status < 300).length,
+        redirected: site.pages.filter((p) => p.redirected || (p.status >= 300 && p.status < 400)).length,
+        broken: site.pages.filter((p) => p.status === 0 || p.status >= 400).length,
+      }
+    : undefined;
   return {
     ok: true,
     data: {
@@ -942,6 +954,8 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       llmsTxt,
       redirectChain,
       seoPlan,
+      crawlSummary,
+      infoCount,
     },
   };
 }
@@ -1053,6 +1067,29 @@ export async function runSiteScan(siteId: string): Promise<RunScanResponse> {
   const fixedItems = prevIssues.filter((i) => !curKeys.has(i.key)).map((i) => ({ label: i.label }));
   const newItems = issues.filter((i) => !prevKeys.has(i.key)).map((i) => ({ label: i.label }));
   const ongoing = issues.filter((i) => prevKeys.has(i.key)).length;
-  await supabase.from("audit_scans").insert({ site_id: siteId, health: data.health, errors: data.counts.errors, warnings: data.counts.warnings, passes: data.counts.passes, issues });
+  await supabase.from("audit_scans").insert({ site_id: siteId, health: data.health, errors: data.counts.errors, warnings: data.counts.warnings, passes: data.counts.passes, issues, report: data });
   return { ok: true, data, diff: { hasPrev, fixed: fixedItems.length, newer: newItems.length, ongoing, fixedItems, newItems } };
+}
+
+export interface ScanRow { id: string; health: number; errors: number; warnings: number; created_at: string }
+export async function getScanHistory(siteId: string): Promise<ScanRow[]> {
+  const profile = await getProfile();
+  if (!profile) return [];
+  const supabase = createClient();
+  const { data } = await supabase.from("audit_scans").select("id,health,errors,warnings,created_at").eq("site_id", siteId).order("created_at", { ascending: false }).limit(20);
+  return (data ?? []) as ScanRow[];
+}
+export async function getScanReport(scanId: string): Promise<AuditData | null> {
+  const profile = await getProfile();
+  if (!profile) return null;
+  const supabase = createClient();
+  const { data } = await supabase.from("audit_scans").select("report").eq("id", scanId).maybeSingle();
+  return (data?.report as AuditData) ?? null;
+}
+export async function getLatestScanReport(siteId: string): Promise<AuditData | null> {
+  const profile = await getProfile();
+  if (!profile) return null;
+  const supabase = createClient();
+  const { data } = await supabase.from("audit_scans").select("report").eq("site_id", siteId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return (data?.report as AuditData) ?? null;
 }

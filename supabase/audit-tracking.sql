@@ -19,8 +19,11 @@ create table if not exists public.audit_scans (
   warnings int,
   passes int,
   issues jsonb not null default '[]'::jsonb,   -- [{key,label,status,urlCount}]
+  report jsonb,                                -- tam AuditData raporu (kayıtlı görünüm için)
   created_at timestamptz not null default now()
 );
+-- Mevcut tabloya sonradan eklemek için:
+alter table public.audit_scans add column if not exists report jsonb;
 
 create index if not exists audit_scans_site_created_idx
   on public.audit_scans (site_id, created_at desc);

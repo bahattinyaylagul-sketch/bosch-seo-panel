@@ -515,8 +515,13 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
     const totalFound = urls.length;
     if (totalFound < 2) return null;
 
-    // tarama: eşzamanlı havuz + süre bütçesi (patlamayı önler)
-    const pages: { url: string; title: string | null; desc: string | null; h1: boolean }[] = [];
+    // tarama: eşzamanlı havuz + süre bütçesi (patlamayı önler) — her sayfada tam denetim
+    interface PageInfo {
+      url: string; title: string | null; desc: string | null; titleLen: number; descLen: number;
+      h1: number; jsonld: boolean; canonical: boolean; noindex: boolean;
+      imgTotal: number; imgNoAlt: number; words: number;
+    }
+    const pages: PageInfo[] = [];
     const deadline = Date.now() + 180000;
     const pool = 20;
     let idx = 0;
@@ -524,12 +529,19 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
       while (idx < urls.length && Date.now() < deadline) {
         const u = urls[idx++];
         const r = await safeFetchText(u, 5000);
-        if (r.ok) {
-          const title = (r.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
-          const desc = (r.text.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim() || null;
-          const h1 = /<h1[\s>]/i.test(r.text);
-          pages.push({ url: u, title, desc, h1 });
-        }
+        if (!r.ok) continue;
+        const t = r.text;
+        const title = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
+        const desc = (t.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim() || null;
+        const h1 = (t.match(/<h1[\s>]/gi) || []).length;
+        const jsonld = /<script[^>]+application\/ld\+json/i.test(t);
+        const canonical = /<link[^>]+rel=["']canonical["']/i.test(t);
+        const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(t);
+        const imgTotal = (t.match(/<img[\s>]/gi) || []).length;
+        const imgNoAlt = (t.match(/<img(?![^>]*\balt=)[^>]*>/gi) || []).length;
+        const body = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const words = body ? body.split(" ").length : 0;
+        pages.push({ url: u, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words });
       }
     }
     await Promise.all(Array.from({ length: pool }, worker));
@@ -548,34 +560,45 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
       map.forEach((list) => { if (list.length > 1) out.push(...list); });
       return out;
     };
+    const urlsOf = (pred: (p: PageInfo) => boolean) => pages.filter(pred).map((p) => p.url);
     const dupTitleUrls = dupUrls("title");
     const dupDescUrls = dupUrls("desc");
-    const missTitleUrls = pages.filter((p) => !p.title).map((p) => p.url);
-    const missDescUrls = pages.filter((p) => !p.desc).map((p) => p.url);
-    const missH1Urls = pages.filter((p) => !p.h1).map((p) => p.url);
+    const missTitleUrls = urlsOf((p) => !p.title);
+    const missDescUrls = urlsOf((p) => !p.desc);
+    const missH1Urls = urlsOf((p) => p.h1 === 0);
+    const multiH1Urls = urlsOf((p) => p.h1 > 1);
+    const noSchemaUrls = urlsOf((p) => !p.jsonld);
+    const noCanonicalUrls = urlsOf((p) => !p.canonical);
+    const noindexUrls = urlsOf((p) => p.noindex);
+    const altUrls = urlsOf((p) => p.imgTotal > 0 && p.imgNoAlt / p.imgTotal > 0.3);
+    const thinUrls = urlsOf((p) => p.words < 200);
+    const longTitleUrls = urlsOf((p) => p.titleLen > 60);
+    const shortDescUrls = urlsOf((p) => !!p.desc && (p.descLen < 50 || p.descLen > 160));
 
     const scopeNote = prefix ? ` · kapsam: ${prefix}` : "";
-    const partial = pages.length < totalFound ? ` (süre limitinden ${totalFound} URL'nin ${pages.length}'i)` : "";
+    const partial = pages.length < totalFound ? ` · süre limitinden ${totalFound} URL'nin ${pages.length}'i` : "";
+    const mk = (label: string, bad: string[], failOver: number, okMsg: string, badMsg: (n: number) => string): Check =>
+      bad.length === 0
+        ? { label, status: "pass", detail: okMsg }
+        : { label, status: bad.length > failOver ? "fail" : "warn", detail: badMsg(bad.length), urls: bad };
 
     const checks: Check[] = [
       { label: "Taranan sayfalar", status: "pass", detail: `${pages.length} sayfa tarandı${partial}${scopeNote} · limit ${CRAWL_LIMIT}`, urls: pages.map((p) => p.url) },
-      dupTitleUrls.length === 0
-        ? { label: "Yinelenen başlıklar (title)", status: "pass", detail: "Tekrarlayan başlık yok" }
-        : { label: "Yinelenen başlıklar (title)", status: dupTitleUrls.length > 5 ? "fail" : "warn", detail: `${dupTitleUrls.length} sayfada tekrar eden başlık`, urls: dupTitleUrls },
-      dupDescUrls.length === 0
-        ? { label: "Yinelenen meta açıklamalar", status: "pass", detail: "Tekrarlayan meta yok" }
-        : { label: "Yinelenen meta açıklamalar", status: dupDescUrls.length > 5 ? "fail" : "warn", detail: `${dupDescUrls.length} sayfada tekrar eden meta`, urls: dupDescUrls },
-      missTitleUrls.length === 0
-        ? { label: "Eksik başlık", status: "pass", detail: "Tüm sayfalarda başlık var" }
-        : { label: "Eksik başlık", status: "fail", detail: `${missTitleUrls.length} sayfada başlık yok`, urls: missTitleUrls },
-      missDescUrls.length === 0
-        ? { label: "Eksik meta açıklama", status: "pass", detail: "Tüm sayfalarda meta var" }
-        : { label: "Eksik meta açıklama", status: missDescUrls.length > pages.length / 2 ? "fail" : "warn", detail: `${missDescUrls.length} sayfada meta yok`, urls: missDescUrls },
-      missH1Urls.length === 0
-        ? { label: "Eksik H1", status: "pass", detail: "Tüm sayfalarda H1 var" }
-        : { label: "Eksik H1", status: missH1Urls.length > pages.length / 2 ? "fail" : "warn", detail: `${missH1Urls.length} sayfada H1 yok`, urls: missH1Urls },
+      mk("Eksik başlık (title)", missTitleUrls, 0, "Tüm sayfalarda başlık var", (n) => `${n} sayfada başlık yok`),
+      mk("Yinelenen başlıklar", dupTitleUrls, 5, "Tekrarlayan başlık yok", (n) => `${n} sayfada tekrar eden başlık`),
+      mk("Uzun başlık (>60 karakter)", longTitleUrls, 10, "Başlık uzunlukları uygun", (n) => `${n} sayfada başlık çok uzun`),
+      mk("Eksik meta açıklama", missDescUrls, Math.floor(pages.length / 2), "Tüm sayfalarda meta var", (n) => `${n} sayfada meta açıklama yok`),
+      mk("Yinelenen meta açıklamalar", dupDescUrls, 5, "Tekrarlayan meta yok", (n) => `${n} sayfada tekrar eden meta`),
+      mk("Meta açıklama uzunluğu (50–160 dışı)", shortDescUrls, 10, "Meta uzunlukları uygun", (n) => `${n} sayfada meta ideal aralık dışı`),
+      mk("Eksik H1", missH1Urls, Math.floor(pages.length / 2), "Tüm sayfalarda H1 var", (n) => `${n} sayfada H1 yok`),
+      mk("Birden fazla H1", multiH1Urls, 10, "Her sayfada tek H1", (n) => `${n} sayfada birden fazla H1`),
+      mk("Yapısal veri (JSON-LD) yok", noSchemaUrls, Math.floor(pages.length / 2), "Tüm sayfalarda schema var", (n) => `${n} sayfada JSON-LD yok`),
+      mk("Canonical yok", noCanonicalUrls, Math.floor(pages.length / 2), "Tüm sayfalarda canonical var", (n) => `${n} sayfada canonical yok`),
+      mk("Görsel alt metni eksik", altUrls, 10, "Görsel alt metinleri yeterli", (n) => `${n} sayfada görsellerin çoğunda alt yok`),
+      mk("Zayıf içerik (<200 kelime)", thinUrls, 10, "İçerik uzunlukları yeterli", (n) => `${n} sayfada içerik çok az`),
+      mk("noindex sayfalar", noindexUrls, 0, "noindex sayfa yok", (n) => `${n} sayfa dizine kapalı (noindex)`),
     ];
-    return { id: "site", title: `Site Geneli Taraması (en fazla ${CRAWL_LIMIT} sayfa)`, checks };
+    return { id: "site", title: `Site Geneli Taraması — ${pages.length} sayfa (Screaming Frog tarzı)`, checks };
   } catch {
     return null;
   }

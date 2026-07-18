@@ -1,65 +1,24 @@
 "use server";
-
 import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
 import { analyzeContentAI, type AiAnalysis } from "@/lib/audit-ai";
-
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 MOTOR — Site geneli bulgular kategorilere dağıtıldı (Screaming Frog tarzı)
+// - Her kontrol etkilenen URL listesini taşır (URL_CAP ile sınırlı)
+// - Skor çifte sayımları temizlendi (alt metni ×2, perf skoru vs metrikler)
+// - Bilgi satırları (info) skora girmez
+// - "Ham HTML" vurgusu: AI crawler'lar JS render etmez — bulgular buna göre etiketli
+// - Kontroller grup içinde hata → uyarı → başarılı sırasında gelir
+// ─────────────────────────────────────────────────────────────────────────────
 export type CheckStatus = "pass" | "warn" | "fail";
 export interface Check {
   label: string;
   status: CheckStatus;
   detail: string;
   fix?: string;
-  urls?: string[]; // etkilenen sayfalar (site geneli taramada)
+  urls?: string[]; // etkilenen sayfalar
+  info?: boolean;  // bilgi satırı — skora girmez
 }
-
-// Kontrol başlığına göre "öneri / nasıl düzeltilir" metni (satır açılınca gösterilir)
-const FIX: Record<string, string> = {
-  "Sunucu yanıt süresi (TTFB)": "Sunucu/CDN önbelleğini iyileştirin, TTFB'yi 800 ms altına indirin.",
-  "Sıkıştırma (gzip/brotli)": "Sunucuda Brotli veya Gzip sıkıştırmayı etkinleştirin; sayfa boyutu belirgin düşer.",
-  "HTML boyutu": "Satır içi (inline) fazla kodu ve gereksiz veriyi azaltın; HTML'i sadeleştirin.",
-  "HSTS güvenlik başlığı": "Strict-Transport-Security başlığı ekleyerek HTTPS'i zorunlu kılın.",
-  "X-Content-Type-Options": "X-Content-Type-Options: nosniff başlığı ekleyin (MIME-sniffing koruması).",
-  "İndekslenebilirlik": "Sayfa dizine alınmalıysa <meta name=robots content=noindex> etiketini kaldırın.",
-  "Canonical etiketi": "Her sayfaya kendine işaret eden (self-referencing) bir canonical ekleyin.",
-  "robots.txt": "Kök dizine robots.txt ekleyin ve içinde Sitemap satırı tanımlayın.",
-  "XML Sitemap": "XML sitemap oluşturup robots.txt'te belirtin ve Search Console'a gönderin.",
-  "Sayfa başlığı (title)": "Başlığı 10–60 karakter tutun; ana anahtar kelimeyi başa, markayı sona alın.",
-  "Meta açıklama": "50–160 karakter, tıklamayı teşvik eden (CTA içeren) benzersiz bir meta açıklama yazın.",
-  "H1 başlığı": "Sayfada tek bir H1 kullanın ve ana anahtar kelimeyi içersin.",
-  "Başlık hiyerarşisi (H2+)": "İçeriği H2/H3 alt başlıklarla bölerek mantıksal bir hiyerarşi kurun.",
-  "İçerik uzunluğu": "İçeriği en az 300+ kelimeye çıkararak konuyu kapsamlı işleyin.",
-  "Görsel alt metni": "Alt metni eksik anlamlı görsellere açıklayıcı alt metni ekleyin.",
-  "İç bağlantılar": "İlgili sayfalara bağlam içeren (contextual) iç bağlantılar ekleyin.",
-  "Dil etiketi (html lang)": "<html lang=\"tr\"> gibi bir dil etiketi tanımlayın.",
-  "hreflang (çok pazar/uluslararası)": "Diller/pazarlar arası hreflang etiketleri ekleyin — Bosch'un çok pazarlı yapısı için kritik.",
-  "Mobil viewport": "<meta name=viewport content=\"width=device-width, initial-scale=1\"> ekleyin.",
-  "Alt metni kapsamı": "Alt metni olmayan görsellere kısa, açıklayıcı alt metni ekleyin.",
-  "Modern format (WebP/AVIF)": "Görselleri WebP/AVIF formatında sunarak dosya boyutunu düşürün.",
-  "Lazy loading": "Ekran dışı görsellere loading=\"lazy\" ekleyin; ilk yük hızlanır.",
-  "Boyut tanımı (CLS)": "Görsellere width/height verin veya aspect-ratio kullanın; düzen kaymasını (CLS) önler.",
-  "Responsive viewport": "width=device-width içeren viewport meta etiketi ekleyin.",
-  "Tema rengi (theme-color)": "<meta name=theme-color> etiketi ekleyin.",
-  "Dokunmatik ikon / favicon": "apple-touch-icon ve favicon tanımlayın.",
-  "Yapısal veri (JSON-LD)": "Schema.org JSON-LD ekleyin (Organization, Product, BreadcrumbList, FAQ). AI motorları için kritik.",
-  "Kurum şeması (Organization)": "Organization/LocalBusiness şeması ekleyerek marka varlığını (entity) netleştirin.",
-  "Ürün şeması (Product/Offer)": "Ürün sayfalarına Product + Offer şeması ekleyin (fiyat, stok, puan).",
-  "Breadcrumb şeması": "BreadcrumbList şeması ekleyerek gezinme yolunu tanımlayın.",
-  "SSS / Soru-Cevap şeması": "Sık sorulan sorular için FAQPage şeması ekleyin — AI cevaplarında öne çıkarır.",
-  "Open Graph (paylaşım/AI önizleme)": "og:title, og:description ve og:image etiketlerini tamamlayın.",
-  "Twitter/X kartı": "twitter:card (ve ilgili) meta etiketlerini ekleyin.",
-  "İçerik derinliği (AI için)": "İçeriği 600+ kelimeye çıkararak AI motorlarının alıntılayabileceği derinlik sağlayın.",
-  "Yinelenen başlıklar (title)": "Aynı başlığı taşıyan sayfalara benzersiz title verin.",
-  "Yinelenen meta açıklamalar": "Aynı meta açıklamayı taşıyan sayfalara benzersiz açıklama yazın.",
-  "Eksik başlık": "Başlığı olmayan sayfalara title etiketi ekleyin.",
-  "Eksik meta açıklama": "Meta açıklaması olmayan sayfalara ekleyin.",
-  "Performans skoru (Lighthouse)": "Aşağıdaki hız fırsatlarını uygulayın: kullanılmayan JS/CSS, görsel optimizasyonu, render-blocking.",
-  "LCP": "En büyük içerik ögesini hızlandırın: görsel optimizasyonu, sunucu yanıtı, render-blocking kaldırma.",
-  "CLS": "Görsel/reklam alanlarına sabit boyut verin; geç yüklenen içeriğin sayfayı kaydırmasını önleyin.",
-  "FCP": "Kritik CSS'i satır içi yapın, render-blocking kaynakları azaltın.",
-  "TBT": "Uzun JavaScript görevlerini bölün, kullanılmayan JS'i kaldırın.",
-  "Speed Index": "Sayfanın görünür kısmının daha erken çizilmesini sağlayın.",
-};
 export interface CheckGroup {
   id: string;
   title: string;
@@ -74,17 +33,78 @@ export interface AuditData {
   opportunities: { title: string; value: string }[];
   groups: CheckGroup[];
   ai: AiAnalysis | null;
+  // ── v3 ek alanları (opsiyonel) ──
+  serp?: { title: string | null; desc: string | null; url: string };
+  social?: { ogTitle: string | null; ogDesc: string | null; ogImage: string | null; twitterCard: boolean };
+  headings?: { tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6"; text: string }[];
+  contentStats?: { words: number; textCodeRatio: number; topWords: { word: string; count: number }[] };
+  imagesList?: { src: string; alt: string | null; kb: number | null; status: number | null }[];
+  linksList?: { href: string; anchor: string; type: "internal" | "external"; status: number | null }[];
+  perfDesktop?: { score: number | null; metrics: { key: string; value: string; status: CheckStatus }[] } | null;
+  crux?: { lcp: string | null; inp: string | null; cls: string | null };
+  aiAccess?: { bot: string; allowed: boolean }[];
+  llmsTxt?: boolean;
+  redirectChain?: { url: string; status: number }[];
 }
 export type AuditResponse = { ok: true; data: AuditData } | { ok: false; error: string };
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const UA = "Mozilla/5.0 (compatible; BoschSEOPanel/1.0; +https://bosch-seo)";
-
+const UA = "Mozilla/5.0 (compatible; BoschSEOPanel/2.0; +https://bosch-seo)";
+const URL_CAP = 100;        // check başına dönen maksimum URL (payload patlamasın)
+const CRAWL_LIMIT = 1500;   // sitemap'ten alınacak maksimum URL
+const CRAWL_BUDGET_MS = 120_000; // site taraması toplam süre bütçesi
+const CRAWL_POOL = 20;      // eşzamanlı fetch havuzu
 function scoreToStatus(s: number | null | undefined): CheckStatus {
   if (s == null) return "warn";
   return s >= 0.9 ? "pass" : s >= 0.5 ? "warn" : "fail";
 }
-
+// Kontrol başlığına göre "öneri / nasıl düzeltilir" metni
+const FIX: Record<string, string> = {
+  "Sunucu yanıt süresi (TTFB)": "Sunucu/CDN önbelleğini iyileştirin, TTFB'yi 800 ms altına indirin.",
+  "Sıkıştırma (gzip/brotli)": "Sunucuda Brotli veya Gzip sıkıştırmayı etkinleştirin; sayfa boyutu belirgin düşer.",
+  "HTML boyutu": "Satır içi (inline) fazla kodu ve gereksiz veriyi azaltın; HTML'i sadeleştirin.",
+  "HSTS güvenlik başlığı": "Strict-Transport-Security başlığı ekleyerek HTTPS'i zorunlu kılın.",
+  "X-Content-Type-Options": "X-Content-Type-Options: nosniff başlığı ekleyin (MIME-sniffing koruması).",
+  "İndekslenebilirlik": "Sayfa dizine alınmalıysa <meta name=robots content=noindex> etiketini kaldırın.",
+  "Canonical etiketi": "Her sayfaya kendine işaret eden (self-referencing) bir canonical ekleyin.",
+  "robots.txt": "Kök dizine robots.txt ekleyin ve içinde Sitemap satırı tanımlayın.",
+  "XML Sitemap": "XML sitemap oluşturup robots.txt'te belirtin ve Search Console'a gönderin.",
+  "Sayfa başlığı (title)": "Başlığı 10–60 karakter tutun; ana anahtar kelimeyi başa, markayı sona alın.",
+  "Meta açıklama": "50–160 karakter, tıklamayı teşvik eden (CTA içeren) benzersiz bir meta açıklama yazın.",
+  "H1 başlığı": "Ham HTML'e tek bir H1 ekleyin ve ana anahtar kelimeyi içersin. JS ile basılan H1'i AI crawler'lar görmez.",
+  "Başlık hiyerarşisi (H2+)": "İçeriği H2/H3 alt başlıklarla bölerek mantıksal bir hiyerarşi kurun.",
+  "İçerik uzunluğu": "İçeriği en az 300+ kelimeye çıkararak konuyu kapsamlı işleyin.",
+  "İç bağlantılar": "İlgili sayfalara bağlam içeren (contextual) iç bağlantılar ekleyin.",
+  "Dil etiketi (html lang)": '<html lang="tr"> gibi bir dil etiketi tanımlayın.',
+  "hreflang (girilen sayfa)": "Diller/pazarlar arası hreflang etiketleri ekleyin — çok pazarlı yapı için kritik.",
+  "Mobil viewport": '<meta name=viewport content="width=device-width, initial-scale=1"> ekleyin.',
+  "Alt metni kapsamı": "Alt metni olmayan görsellere kısa, açıklayıcı alt metni ekleyin.",
+  "Modern format (WebP/AVIF)": "Görselleri WebP/AVIF formatında sunarak dosya boyutunu düşürün.",
+  "Lazy loading": 'Ekran dışı görsellere loading="lazy" ekleyin; ilk yük hızlanır.',
+  "Boyut tanımı (CLS)": "Görsellere width/height verin veya aspect-ratio kullanın; düzen kaymasını (CLS) önler.",
+  "Responsive viewport": "width=device-width içeren viewport meta etiketi ekleyin.",
+  "Tema rengi (theme-color)": "<meta name=theme-color> etiketi ekleyin.",
+  "Dokunmatik ikon / favicon": "apple-touch-icon ve favicon tanımlayın.",
+  "Yapısal veri (JSON-LD)": "Ham HTML'e Schema.org JSON-LD ekleyin (Organization, Product, BreadcrumbList, FAQ). AI motorları için kritik.",
+  "Kurum şeması (Organization)": "Organization/LocalBusiness şeması ekleyerek marka varlığını (entity) netleştirin.",
+  "Ürün şeması (Product/Offer)": "Ürün sayfalarına Product + Offer şeması ekleyin (fiyat, stok, puan).",
+  "Breadcrumb şeması": "BreadcrumbList şeması ekleyerek gezinme yolunu tanımlayın.",
+  "SSS / Soru-Cevap şeması": "Sık sorulan sorular için FAQPage şeması ekleyin — AI cevaplarında öne çıkarır.",
+  "Open Graph (paylaşım/AI önizleme)": "og:title, og:description ve og:image etiketlerini tamamlayın.",
+  "Twitter/X kartı": "twitter:card (ve ilgili) meta etiketlerini ekleyin.",
+  "İçerik derinliği (AI için)": "İçeriği 600+ kelimeye çıkararak AI motorlarının alıntılayabileceği derinlik sağlayın.",
+  "Client-side rendering (CSR) riski": "Kritik içeriği (H1, metin, JSON-LD) sunucu tarafında (SSR/SSG) render edin. GPTBot, ClaudeBot, PerplexityBot JS çalıştırmaz.",
+  "LCP": "En büyük içerik ögesini hızlandırın: görsel optimizasyonu, sunucu yanıtı, render-blocking kaldırma.",
+  "CLS": "Görsel/reklam alanlarına sabit boyut verin; geç yüklenen içeriğin sayfayı kaydırmasını önleyin.",
+  "FCP": "Kritik CSS'i satır içi yapın, render-blocking kaynakları azaltın.",
+  "TBT": "Uzun JavaScript görevlerini bölün, kullanılmayan JS'i kaldırın.",
+  "Speed Index": "Sayfanın görünür kısmının daha erken çizilmesini sağlayın.",
+  "Kırık linkler (girilen sayfa)": "4xx/5xx dönen hedef bağlantıları düzeltin veya kaldırın; kullanıcı ve crawler deneyimini bozar.",
+  "Yönlendirme zinciri": "Girilen URL'yi tek adımda (301'siz) nihai adrese götürün; zincir crawl bütçesi ve hız kaybettirir.",
+  "AI bot erişimi": "robots.txt'te AI botlarını (GPTBot, ClaudeBot, PerplexityBot) bilinçli engellemediyseniz Disallow kurallarını gözden geçirin.",
+  "llms.txt": "Kök dizine llms.txt ekleyerek AI motorlarına içerik rehberi sunun (yeni, opsiyonel standart).",
+  "URL hijyeni (site geneli)": "URL'leri kısa, küçük harf, tire ayraçlı ve sığ (az segmentli) tutun; okunabilir ve taranabilir olsun.",
+  "INP (gerçek kullanıcı)": "Etkileşim gecikmesini azaltın: uzun JS görevlerini bölün, ana thread'i boşaltın (CrUX gerçek kullanıcı verisi).",
+};
 // Lighthouse "opportunity" audit id → Türkçe başlık
 const OPP_TR: Record<string, string> = {
   "unused-javascript": "Kullanılmayan JavaScript'i azalt",
@@ -108,7 +128,6 @@ const OPP_TR: Record<string, string> = {
   "prioritize-lcp-image": "LCP görselini önceliklendir",
   "efficient-animated-content": "Animasyonlu içeriği video olarak sun",
 };
-
 // ── Lighthouse (PageSpeed) ─────────────────────────────────────────────────
 type LhOk = {
   ok: true;
@@ -116,18 +135,19 @@ type LhOk = {
   perfScore: number | null;
   metrics: { key: string; value: string; status: CheckStatus }[];
   opportunities: { title: string; value: string }[];
+  crux: { lcp: string | null; inp: string | null; cls: string | null };
+  inpMs: number | null;
 };
-async function fetchLighthouse(url: string): Promise<LhOk | { ok: false; error: string }> {
-  const params = new URLSearchParams({ url, strategy: "mobile" });
+async function fetchLighthouse(url: string, strategy: "mobile" | "desktop" = "mobile"): Promise<LhOk | { ok: false; error: string }> {
+  const params = new URLSearchParams({ url, strategy });
   params.append("category", "performance");
   if (process.env.PAGESPEED_API_KEY) params.set("key", process.env.PAGESPEED_API_KEY);
   const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`;
-
-  const MAX = 3;
+  const MAX = 2; // bütçe: en kötü ~80 sn (eskiden 3×50 = 150 sn — maxDuration'ı zorluyordu)
   let lastErr = "Analiz tamamlanamadı.";
   for (let attempt = 1; attempt <= MAX; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 50000);
+    const timer = setTimeout(() => controller.abort(), 40000);
     try {
       const res = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       clearTimeout(timer);
@@ -141,7 +161,6 @@ async function fetchLighthouse(url: string): Promise<LhOk | { ok: false; error: 
       const lr = data?.lighthouseResult;
       if (!lr) { lastErr = data?.error?.message ?? "Sonuç alınamadı."; if (attempt < MAX) { await sleep(1500); continue; } return { ok: false, error: lastErr }; }
       if (lr.runtimeError?.message) { lastErr = "Sayfa analiz edilemedi: " + lr.runtimeError.message; if (attempt < MAX) { await sleep(1500); continue; } return { ok: false, error: lastErr }; }
-
       const A = lr.audits ?? {};
       const cell = (k: string) => ({ value: (A[k]?.displayValue as string) ?? "—", status: scoreToStatus(A[k]?.score) });
       const metrics = [
@@ -161,8 +180,17 @@ async function fetchLighthouse(url: string): Promise<LhOk | { ok: false; error: 
           const value = kb ? `~${kb} KB tasarruf` : ms ? `~${ms} ms tasarruf` : "";
           return { title: OPP_TR[id] ?? (a.title as string), value };
         });
-
-      return { ok: true, finalUrl: lr.finalUrl ?? url, perfScore: lr.categories?.performance?.score ?? null, metrics, opportunities };
+      // CrUX (gerçek kullanıcı) — sadece mobil yanıtta anlamlı, alan yoksa null
+      const le = (data?.loadingExperience?.metrics ?? {}) as Record<string, { percentile?: number }>;
+      const lcpMs = le?.LARGEST_CONTENTFUL_PAINT_MS?.percentile;
+      const inpMs = le?.INTERACTION_TO_NEXT_PAINT?.percentile;
+      const clsRaw = le?.CUMULATIVE_LAYOUT_SHIFT_SCORE?.percentile;
+      const crux = {
+        lcp: typeof lcpMs === "number" ? (lcpMs / 1000).toFixed(1) + " s" : null,
+        inp: typeof inpMs === "number" ? inpMs + " ms" : null,
+        cls: typeof clsRaw === "number" ? (clsRaw / 100).toFixed(2) : null,
+      };
+      return { ok: true, finalUrl: lr.finalUrl ?? url, perfScore: lr.categories?.performance?.score ?? null, metrics, opportunities, crux, inpMs: typeof inpMs === "number" ? inpMs : null };
     } catch (e) {
       clearTimeout(timer);
       const isAbort = e instanceof Error && e.name === "AbortError";
@@ -173,20 +201,19 @@ async function fetchLighthouse(url: string): Promise<LhOk | { ok: false; error: 
   }
   return { ok: false, error: lastErr };
 }
-
-async function safeFetchText(u: string, ms: number): Promise<{ ok: boolean; status: number; text: string }> {
+// ── Yardımcı fetch'ler ─────────────────────────────────────────────────────
+async function safeFetchText(u: string, ms: number): Promise<{ ok: boolean; status: number; text: string; finalUrl: string }> {
   try {
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), ms);
-    const r = await fetch(u, { cache: "no-store", signal: c.signal, headers: { "User-Agent": UA } });
+    const r = await fetch(u, { cache: "no-store", redirect: "follow", signal: c.signal, headers: { "User-Agent": UA } });
     clearTimeout(t);
     const text = r.ok ? (await r.text()).slice(0, 300_000) : "";
-    return { ok: r.ok, status: r.status, text };
+    return { ok: r.ok, status: r.status, text, finalUrl: r.url || u };
   } catch {
-    return { ok: false, status: 0, text: "" };
+    return { ok: false, status: 0, text: "", finalUrl: u };
   }
 }
-
 // Sitemap fetch — gzip'li (.xml.gz veya gövdesi gzip) sitemap'leri de açar
 async function fetchXml(u: string, ms: number): Promise<{ ok: boolean; text: string }> {
   try {
@@ -207,65 +234,367 @@ async function fetchXml(u: string, ms: number): Promise<{ ok: boolean; text: str
     return { ok: false, text: "" };
   }
 }
-
-// ── Kendi crawler'ımız: teknik + on-page + GEO ─────────────────────────────
-interface CrawlResult {
-  groups: CheckGroup[];
-  pageText: string;
-  title: string;
-  desc: string;
+// ── Girilen sayfanın derin analizi ─────────────────────────────────────────
+interface EnteredPage {
+  ok: boolean;
+  finalUrl: string;
   origin: string;
+  host: string;
+  status: number;
+  ttfb: number;
+  headers: Headers | null;
+  html: string;
+  text: string;
+  words: number;
+  title: string | null;
+  desc: string | null;
 }
-async function crawl(inputUrl: string): Promise<CrawlResult> {
-  const tech: Check[] = [];
-  const onpage: Check[] = [];
-  const geo: Check[] = [];
-  const images: Check[] = [];
-  const mobile: Check[] = [];
-
-  let finalUrl = inputUrl;
-  let html = "";
-  let headers: Headers | null = null;
-  let ttfb = 0;
-  let status = 0;
-
+async function fetchEnteredPage(inputUrl: string): Promise<EnteredPage> {
+  const empty: EnteredPage = { ok: false, finalUrl: inputUrl, origin: "", host: "", status: 0, ttfb: 0, headers: null, html: "", text: "", words: 0, title: null, desc: null };
   try {
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), 15000);
     const t0 = Date.now();
     const res = await fetch(inputUrl, { cache: "no-store", redirect: "follow", signal: c.signal, headers: { "User-Agent": UA } });
-    ttfb = Date.now() - t0;
+    const ttfb = Date.now() - t0;
     clearTimeout(t);
-    status = res.status;
-    finalUrl = res.url || inputUrl;
-    headers = res.headers;
-    html = (await res.text()).slice(0, 1_200_000);
+    const html = (await res.text()).slice(0, 1_200_000);
+    const finalUrl = res.url || inputUrl;
+    const origin = (() => { try { return new URL(finalUrl).origin; } catch { return ""; } })();
+    const host = (() => { try { return new URL(finalUrl).host; } catch { return ""; } })();
+    const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+    const words = text ? text.split(" ").length : 0;
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
+    const desc = ((html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i)?.[1]) ?? "").trim() || null;
+    return { ok: true, finalUrl, origin, host, status: res.status, ttfb, headers: res.headers, html, text, words, title, desc };
   } catch {
-    tech.push({ label: "Sayfa erişimi", status: "fail", detail: "Sayfa HTML'i alınamadı (zaman aşımı veya engel)." });
-    return { groups: [{ id: "tech", title: "Teknik SEO & Taranabilirlik", checks: tech }], pageText: "", title: "", desc: "", origin: "" };
+    return empty;
   }
+}
+// ── Site geneli tarama: sitemap'ten sayfa verisi topla ─────────────────────
+interface PageInfo {
+  url: string; status: number; redirected: boolean;
+  title: string | null; desc: string | null; titleLen: number; descLen: number;
+  h1: number; jsonld: boolean; canonical: boolean; noindex: boolean;
+  imgTotal: number; imgNoAlt: number; words: number; hreflang: number; viewport: boolean;
+}
+interface SiteCrawlResult { pages: PageInfo[]; totalFound: number; prefix: string; partial: boolean }
+async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlResult | null> {
+  if (!origin) return null;
+  try {
+    const extractLocs = (xml: string) =>
+      Array.from(xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)).map((m) => m[1].trim()).filter((u) => /^https?:\/\//i.test(u));
+    // kapsam: girilen URL'nin ilk yol segmenti (örn. /tr) — sadece o dil/ülke
+    let prefix = "";
+    let country = "";
+    try {
+      const seg = new URL(scopeUrl).pathname.split("/").filter(Boolean)[0];
+      if (seg) { prefix = "/" + seg; country = seg; }
+    } catch {}
+    const inScope = (u: string) => {
+      if (!prefix) return true;
+      try { const p = new URL(u).pathname; return p === prefix || p.startsWith(prefix + "/"); } catch { return false; }
+    };
+    // robots.txt'teki TÜM sitemap'ler → kapsamla eşleşeni seç
+    const robots = await safeFetchText(origin + "/robots.txt", 6000);
+    const sitemaps = Array.from(robots.text.matchAll(/sitemap:\s*(\S+)/gi)).map((m) => m[1].trim());
+    let sitemapUrl = origin + "/sitemap.xml";
+    if (prefix) {
+      const byPath = sitemaps.find((s) => { try { return new URL(s).pathname.startsWith(prefix + "/"); } catch { return false; } });
+      const byToken = sitemaps.find((s) => new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i").test(s));
+      sitemapUrl = byPath || byToken || sitemaps[0] || sitemapUrl;
+    } else if (sitemaps[0]) {
+      sitemapUrl = sitemaps[0];
+    }
+    const root = await fetchXml(sitemapUrl, 10000);
+    if (!root.ok) return null;
+    // sitemap index ise alt-sitemap'leri gez — kapsamdaki alt-sitemap'leri öne al
+    let urls: string[] = [];
+    if (/<sitemapindex/i.test(root.text)) {
+      let children = extractLocs(root.text);
+      if (country) {
+        const rx = new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i");
+        children = [...children.filter((c) => rx.test(c)), ...children.filter((c) => !rx.test(c))];
+      }
+      children = children.slice(0, 40);
+      for (const child of children) {
+        if (urls.filter(inScope).length >= CRAWL_LIMIT) break;
+        const sub = await fetchXml(child, 9000);
+        if (sub.ok) urls.push(...extractLocs(sub.text));
+      }
+    } else {
+      urls = extractLocs(root.text);
+    }
+    urls = Array.from(new Set(urls.filter(inScope))).slice(0, CRAWL_LIMIT);
+    const totalFound = urls.length;
+    if (totalFound < 2) return null;
+    const pages: PageInfo[] = [];
+    const deadline = Date.now() + CRAWL_BUDGET_MS;
+    let idx = 0;
+    async function worker() {
+      while (idx < urls.length && Date.now() < deadline) {
+        const u = urls[idx++];
+        const r = await safeFetchText(u, 5000);
+        // Erişilemeyen (4xx/5xx/timeout) sayfaları da kaydet — bunlar da bulgu
+        if (!r.ok) {
+          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false });
+          continue;
+        }
+        const t = r.text;
+        const strip = (s: string) => s.replace(/^\s*https?:\/\/[^/]+/i, "");
+        const redirected = strip(r.finalUrl).replace(/\/+$/, "") !== strip(u).replace(/\/+$/, "");
+        const title = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
+        const desc = (t.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim() || null;
+        const h1 = (t.match(/<h1[\s>]/gi) || []).length;
+        const jsonld = /<script[^>]+application\/ld\+json/i.test(t);
+        const canonical = /<link[^>]+rel=["']canonical["']/i.test(t);
+        const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(t);
+        const imgTotal = (t.match(/<img[\s>]/gi) || []).length;
+        const imgNoAlt = (t.match(/<img(?![^>]*\balt=)[^>]*>/gi) || []).length;
+        const hreflang = (t.match(/hreflang=["'][^"']+["']/gi) || []).length;
+        const viewport = /<meta[^>]+name=["']viewport["']/i.test(t);
+        const body = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const words = body ? body.split(" ").length : 0;
+        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport });
+      }
+    }
+    await Promise.all(Array.from({ length: CRAWL_POOL }, worker));
+    if (pages.length < 2) return null;
+    return { pages, totalFound, prefix, partial: pages.length < totalFound };
+  } catch {
+    return null;
+  }
+}
+// ── Site geneli check üretici ──────────────────────────────────────────────
+function siteCheck(label: string, bad: string[], failOver: number, okMsg: string, badMsg: (n: number) => string, fix: string): Check {
+  if (bad.length === 0) return { label, status: "pass", detail: okMsg, fix };
+  const capped = bad.slice(0, URL_CAP);
+  const capNote = bad.length > URL_CAP ? ` (ilk ${URL_CAP} listelendi)` : "";
+  return { label, status: bad.length > failOver ? "fail" : "warn", detail: badMsg(bad.length) + capNote, urls: capped, fix };
+}
+// ── v3 çıkarım yardımcıları ────────────────────────────────────────────────
+async function runPool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  async function worker() { while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx]); } }
+  await Promise.all(Array.from({ length: Math.min(size, items.length || 1) }, worker));
+  return out;
+}
+function absUrl(src: string, base: string): string | null {
+  try { return new URL(src, base).toString(); } catch { return null; }
+}
+function metaContent(html: string, attr: string, val: string): string | null {
+  const re1 = new RegExp(`<meta[^>]+${attr}=["']${val}["'][^>]*content=["']([^"']*)["']`, "i");
+  const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+${attr}=["']${val}["']`, "i");
+  return ((html.match(re1)?.[1] ?? html.match(re2)?.[1]) ?? "").trim() || null;
+}
+function extractSocial(html: string): { ogTitle: string | null; ogDesc: string | null; ogImage: string | null; twitterCard: boolean } {
+  return {
+    ogTitle: metaContent(html, "property", "og:title"),
+    ogDesc: metaContent(html, "property", "og:description"),
+    ogImage: metaContent(html, "property", "og:image"),
+    twitterCard: /name=["']twitter:card["']/i.test(html),
+  };
+}
+function extractHeadings(html: string): { tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6"; text: string }[] {
+  const out: { tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6"; text: string }[] = [];
+  const re = /<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < 40) {
+    const tag = m[1].toLowerCase() as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+    const text = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+    if (text) out.push({ tag, text });
+  }
+  return out;
+}
+const STOPWORDS = new Set([
+  "ve", "ile", "için", "bir", "bu", "da", "de", "en", "çok", "gibi", "olan", "olarak", "ya", "ki", "ama", "veya",
+  "her", "daha", "sonra", "önce", "kadar", "hem", "ise", "göre", "tüm", "değil", "var", "yok", "the", "and", "for",
+  "are", "but", "not", "you", "all", "can", "her", "was", "one", "our", "out", "has", "with", "this", "that", "from",
+  "your", "have", "more", "will", "home", "page", "www", "com", "http", "https", "bosch", "menü", "genel", "bakış",
+  "daha", "fazla", "bilgi", "main", "navigation", "close", "kapat", "ara", "keşfet", "servis", "ürünler",
+]);
+function computeContentStats(html: string, text: string, words: number): { words: number; textCodeRatio: number; topWords: { word: string; count: number }[] } {
+  const rawBytes = new TextEncoder().encode(html).length;
+  const textBytes = new TextEncoder().encode(text).length;
+  const textCodeRatio = rawBytes ? Math.round((100 * textBytes) / rawBytes) : 0;
+  const freq = new Map<string, number>();
+  const tokens = text.toLowerCase().match(/[a-zçğıöşü0-9]{3,}/gi) ?? [];
+  for (const w of tokens) { if (STOPWORDS.has(w)) continue; freq.set(w, (freq.get(w) ?? 0) + 1); }
+  const topWords = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([word, count]) => ({ word, count }));
+  return { words, textCodeRatio, topWords };
+}
+async function headInfo(u: string, ms: number, allowGet = false): Promise<{ status: number | null; kb: number | null }> {
+  const doFetch = async (method: string) => {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), ms);
+    try {
+      const r = await fetch(u, { method, redirect: "follow", signal: c.signal, headers: { "User-Agent": UA } });
+      clearTimeout(t);
+      const cl = r.headers.get("content-length");
+      const kb = cl ? Math.round(parseInt(cl, 10) / 1024) : null;
+      return { status: r.status, kb };
+    } catch { clearTimeout(t); return null; }
+  };
+  let res = await doFetch("HEAD");
+  if (allowGet && (!res || res.status === 405 || res.status === 501)) {
+    const g = await doFetch("GET");
+    if (g) res = g;
+  }
+  return res ?? { status: null, kb: null };
+}
+async function fetchImagesList(html: string, base: string): Promise<{ src: string; alt: string | null; kb: number | null; status: number | null }[]> {
+  const tags = (html.match(/<img\b[^>]*>/gi) || []);
+  const seen = new Set<string>();
+  const items: { src: string; alt: string | null }[] = [];
+  for (const tag of tags) {
+    const src = tag.match(/\bsrc=["']([^"']+)["']/i)?.[1];
+    if (!src || /^data:/i.test(src)) continue;
+    const abs = absUrl(src, base);
+    if (!abs || seen.has(abs)) continue;
+    seen.add(abs);
+    const alt = /\balt=/i.test(tag) ? (tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? "") : null;
+    items.push({ src: abs, alt });
+    if (items.length >= 15) break;
+  }
+  return runPool(items, 6, async (it) => {
+    const h = await headInfo(it.src, 5000);
+    return { src: it.src, alt: it.alt, kb: h.kb, status: h.status };
+  });
+}
+async function fetchLinksList(html: string, base: string, host: string): Promise<{ list: { href: string; anchor: string; type: "internal" | "external"; status: number | null }[]; broken: string[] }> {
+  const anchors = Array.from(html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi));
+  const seen = new Set<string>();
+  const items: { href: string; anchor: string; type: "internal" | "external" }[] = [];
+  for (const m of anchors) {
+    const raw = m[1];
+    if (/^(#|javascript:|mailto:|tel:)/i.test(raw)) continue;
+    const abs = absUrl(raw, base);
+    if (!abs || !/^https?:/i.test(abs) || seen.has(abs)) continue;
+    seen.add(abs);
+    const anchor = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    let type: "internal" | "external" = "external";
+    try { type = new URL(abs).host === host ? "internal" : "external"; } catch {}
+    items.push({ href: abs, anchor, type });
+    if (items.length >= 40) break;
+  }
+  const list = await runPool(items, 8, async (it) => {
+    const h = await headInfo(it.href, 5000, true);
+    return { ...it, status: h.status };
+  });
+  const broken = list.filter((r) => r.status != null && r.status >= 400).map((r) => r.href);
+  return { list, broken };
+}
+function parseAiAccess(robots: string): { bot: string; allowed: boolean }[] {
+  const bots = ["GPTBot", "ClaudeBot", "Claude-Web", "PerplexityBot", "Google-Extended", "CCBot", "Bytespider"];
+  const blocks: { agents: string[]; disallowAll: boolean }[] = [];
+  let agents: string[] = [];
+  let disallowAll = false;
+  let sawDirective = false;
+  const flush = () => { if (agents.length) blocks.push({ agents, disallowAll }); agents = []; disallowAll = false; sawDirective = false; };
+  for (const rawLine of robots.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*/, "").trim();
+    if (!line) continue;
+    const ua = line.match(/^user-agent:\s*(.+)$/i);
+    if (ua) { if (sawDirective) flush(); agents.push(ua[1].trim().toLowerCase()); continue; }
+    const dis = line.match(/^disallow:\s*(.*)$/i);
+    if (dis) { sawDirective = true; if (dis[1].trim() === "/") disallowAll = true; continue; }
+    sawDirective = true;
+  }
+  flush();
+  const blocked = (bot: string) => {
+    const b = bot.toLowerCase();
+    const specific = blocks.find((bl) => bl.agents.includes(b));
+    if (specific) return specific.disallowAll;
+    const star = blocks.find((bl) => bl.agents.includes("*"));
+    return star ? star.disallowAll : false;
+  };
+  return bots.map((bot) => ({ bot, allowed: !blocked(bot) }));
+}
+async function fetchRedirectChain(startUrl: string): Promise<{ url: string; status: number }[]> {
+  const chain: { url: string; status: number }[] = [];
+  let u = startUrl;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 5000);
+      const r = await fetch(u, { method: "GET", redirect: "manual", signal: c.signal, headers: { "User-Agent": UA } });
+      clearTimeout(t);
+      chain.push({ url: u, status: r.status });
+      if (r.status >= 300 && r.status < 400) {
+        const loc = r.headers.get("location");
+        if (!loc) break;
+        const next = absUrl(loc, u);
+        if (!next) break;
+        u = next;
+      } else break;
+    } catch { break; }
+  }
+  return chain;
+}
+async function fetchLlmsTxt(origin: string): Promise<boolean> {
+  const r = await safeFetchText(origin + "/llms.txt", 5000);
+  return r.ok;
+}
+function urlHygieneBad(pages: PageInfo[]): string[] {
+  const bad: string[] = [];
+  for (const p of pages) {
+    try {
+      const path = new URL(p.url).pathname;
+      const segs = path.split("/").filter(Boolean).length;
+      if (p.url.length > 115 || /[A-Z]/.test(path) || path.includes("_") || segs >= 5) bad.push(p.url);
+    } catch {}
+  }
+  return bad;
+}
 
-  const origin = (() => { try { return new URL(finalUrl).origin; } catch { return ""; } })();
-  const host = (() => { try { return new URL(finalUrl).host; } catch { return ""; } })();
+// ── Grupları kur: girilen sayfa + site geneli birleşik ─────────────────────
+interface BuildExtra {
+  brokenLinks?: Check | null;
+  redirectChain?: Check | null;
+  aiAccess?: Check | null;
+  llmsTxt?: Check | null;
+}
+function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, extra: BuildExtra = {}): CheckGroup[] {
+  const html = page.html;
   const has = (re: RegExp) => re.test(html);
   const m1 = (re: RegExp) => { const m = html.match(re); return m ? m[1].trim() : null; };
   const count = (re: RegExp) => (html.match(re) || []).length;
-  const h = (k: string) => headers?.get(k) ?? null;
-
-  // ── Teknik SEO & taranabilirlik ──
-  tech.push({ label: "HTTP durumu", status: status >= 200 && status < 300 ? "pass" : "fail", detail: `${status}` });
-  tech.push(
-    finalUrl.startsWith("https://")
-      ? { label: "HTTPS (güvenli bağlantı)", status: "pass", detail: "Sertifikalı bağlantı" }
-      : { label: "HTTPS (güvenli bağlantı)", status: "fail", detail: "Site HTTPS değil" }
-  );
-  tech.push(
-    ttfb < 800
-      ? { label: "Sunucu yanıt süresi (TTFB)", status: "pass", detail: `${ttfb} ms` }
-      : ttfb < 1800
-        ? { label: "Sunucu yanıt süresi (TTFB)", status: "warn", detail: `${ttfb} ms (yavaş)` }
-        : { label: "Sunucu yanıt süresi (TTFB)", status: "fail", detail: `${ttfb} ms (çok yavaş)` }
-  );
+  const h = (k: string) => page.headers?.get(k) ?? null;
+  const P = site?.pages ?? [];
+  const N = P.length;
+  const sitewide = N >= 2;
+  const of = (pred: (p: PageInfo) => boolean) => P.filter(pred).map((p) => p.url);
+  const scopeTag = sitewide ? ` · ${N} sayfa` : " · girilen sayfa";
+  const tech: Check[] = [];
+  const onpage: Check[] = [];
+  const geo: Check[] = [];
+  const images: Check[] = [];
+  const mobile: Check[] = [];
+  const perf: Check[] = [];
+  // ═══ TEKNİK SEO & TARANABİLİRLİK ═══
+  if (sitewide) {
+    const partial = site!.partial ? ` · süre limitinden ${site!.totalFound} URL'nin ${N}'i` : "";
+    const scopeNote = site!.prefix ? ` · kapsam: ${site!.prefix}` : "";
+    tech.push({ label: "Taranan sayfalar", status: "pass", info: true, detail: `${N} sayfa tarandı${partial}${scopeNote} · limit ${CRAWL_LIMIT}`, urls: P.slice(0, URL_CAP).map((p) => p.url) });
+  }
+  tech.push({ label: "HTTP durumu (girilen sayfa)", status: page.status >= 200 && page.status < 300 ? "pass" : "fail", detail: `${page.status}` });
+  if (sitewide) {
+    tech.push(siteCheck("Erişilemeyen sayfalar (4xx/5xx)", of((p) => p.status === 0 || p.status >= 400), 0,
+      "Tüm sayfalar erişilebilir", (n) => `${n} sayfa hata döndürüyor veya yanıt vermiyor`,
+      "Sitemap'te ölü URL bırakmayın; 404/500 dönen sayfaları düzeltin veya sitemap'ten çıkarın."));
+    tech.push(siteCheck("Yönlendirilen sitemap URL'leri (3xx)", of((p) => p.redirected), Math.max(5, Math.floor(N / 10)),
+      "Sitemap URL'leri doğrudan yanıt veriyor", (n) => `${n} sitemap URL'si başka adrese yönleniyor`,
+      "Sitemap'te nihai (301'siz) URL'leri listeleyin; crawl bütçesi boşa gitmesin."));
+  }
+  tech.push(page.finalUrl.startsWith("https://")
+    ? { label: "HTTPS (güvenli bağlantı)", status: "pass", detail: "Sertifikalı bağlantı" }
+    : { label: "HTTPS (güvenli bağlantı)", status: "fail", detail: "Site HTTPS değil" });
+  tech.push(page.ttfb < 800
+    ? { label: "Sunucu yanıt süresi (TTFB)", status: "pass", detail: `${page.ttfb} ms` }
+    : page.ttfb < 1800
+      ? { label: "Sunucu yanıt süresi (TTFB)", status: "warn", detail: `${page.ttfb} ms (yavaş)` }
+      : { label: "Sunucu yanıt süresi (TTFB)", status: "fail", detail: `${page.ttfb} ms (çok yavaş)` });
   const enc = h("content-encoding");
   tech.push(enc && /gzip|br|deflate/i.test(enc)
     ? { label: "Sıkıştırma (gzip/brotli)", status: "pass", detail: enc }
@@ -282,89 +611,136 @@ async function crawl(inputUrl: string): Promise<CrawlResult> {
   tech.push(h("x-content-type-options")
     ? { label: "X-Content-Type-Options", status: "pass", detail: h("x-content-type-options")! }
     : { label: "X-Content-Type-Options", status: "warn", detail: "Yok (MIME-sniffing koruması yok)" });
-  const noindex = has(/<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i);
-  tech.push(noindex
-    ? { label: "İndekslenebilirlik", status: "fail", detail: "noindex! Arama motoru dizine almaz" }
-    : { label: "İndekslenebilirlik", status: "pass", detail: "Dizine alınabilir" });
-  const canonical = m1(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i);
-  tech.push(canonical
-    ? { label: "Canonical etiketi", status: "pass", detail: canonical.length > 70 ? canonical.slice(0, 67) + "…" : canonical }
-    : { label: "Canonical etiketi", status: "warn", detail: "Yok — yinelenen içerik riski" });
-
-  // robots.txt & sitemap
-  if (origin) {
-    const robots = await safeFetchText(origin + "/robots.txt", 8000);
-    if (robots.ok) {
-      tech.push({ label: "robots.txt", status: "pass", detail: "Mevcut" });
-      const sm = robots.text.match(/sitemap:\s*(\S+)/i);
-      if (sm) tech.push({ label: "XML Sitemap", status: "pass", detail: "robots.txt içinde tanımlı" });
-      else {
-        const smf = await safeFetchText(origin + "/sitemap.xml", 8000);
-        tech.push(smf.ok
-          ? { label: "XML Sitemap", status: "pass", detail: "/sitemap.xml mevcut" }
-          : { label: "XML Sitemap", status: "warn", detail: "Sitemap bulunamadı" });
-      }
-    } else {
-      tech.push({ label: "robots.txt", status: "warn", detail: "Bulunamadı" });
-    }
+  // İndekslenebilirlik + canonical + noindex — site geneli varsa oradan, yoksa girilen sayfadan
+  if (sitewide) {
+    tech.push(siteCheck("noindex sayfalar", of((p) => p.noindex), 0,
+      "Dizine kapalı sayfa yok", (n) => `${n} sayfa dizine kapalı (noindex)`, FIX["İndekslenebilirlik"]!));
+    tech.push(siteCheck("Canonical yok", of((p) => p.status > 0 && p.status < 400 && !p.canonical), Math.floor(N / 2),
+      "Tüm sayfalarda canonical var", (n) => `${n} sayfada canonical yok`, FIX["Canonical etiketi"]!));
+  } else {
+    const noindex = has(/<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i);
+    tech.push(noindex
+      ? { label: "İndekslenebilirlik", status: "fail", detail: "noindex! Arama motoru dizine almaz" }
+      : { label: "İndekslenebilirlik", status: "pass", detail: "Dizine alınabilir" });
+    const canonical = m1(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i);
+    tech.push(canonical
+      ? { label: "Canonical etiketi", status: "pass", detail: canonical.length > 70 ? canonical.slice(0, 67) + "…" : canonical }
+      : { label: "Canonical etiketi", status: "warn", detail: "Yok — yinelenen içerik riski" });
   }
-
-  // ── Sayfa içi SEO ──
-  const title = m1(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  onpage.push(title
-    ? { label: "Sayfa başlığı (title)", status: title.length >= 10 && title.length <= 60 ? "pass" : "warn", detail: `${title.length} karakter${title.length > 60 ? " (çok uzun, kesilebilir)" : title.length < 10 ? " (çok kısa)" : ""} — "${title.slice(0, 55)}"` }
+  // ═══ SAYFA İÇİ SEO ═══
+  // Girilen sayfa detayı
+  onpage.push(page.title
+    ? { label: "Sayfa başlığı (title)", status: page.title.length >= 10 && page.title.length <= 60 ? "pass" : "warn", detail: `${page.title.length} karakter${page.title.length > 60 ? " (çok uzun, kesilebilir)" : page.title.length < 10 ? " (çok kısa)" : ""} — "${page.title.slice(0, 55)}"` }
     : { label: "Sayfa başlığı (title)", status: "fail", detail: "Başlık etiketi yok" });
-  const desc = m1(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i) || m1(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i);
-  onpage.push(desc
-    ? { label: "Meta açıklama", status: desc.length >= 50 && desc.length <= 160 ? "pass" : "warn", detail: `${desc.length} karakter (ideal 50–160)` }
+  onpage.push(page.desc
+    ? { label: "Meta açıklama", status: page.desc.length >= 50 && page.desc.length <= 160 ? "pass" : "warn", detail: `${page.desc.length} karakter (ideal 50–160)` }
     : { label: "Meta açıklama", status: "fail", detail: "Meta description yok" });
   const h1 = count(/<h1[\s>]/gi);
   onpage.push(h1 === 1
     ? { label: "H1 başlığı", status: "pass", detail: "Tek H1 (ideal)" }
     : h1 === 0
-      ? { label: "H1 başlığı", status: "fail", detail: "H1 bulunamadı" }
+      ? { label: "H1 başlığı", status: "fail", detail: "Ham HTML'de H1 yok — AI crawler'lar (GPTBot, ClaudeBot) sayfayı başlıksız görür" }
       : { label: "H1 başlığı", status: "warn", detail: `${h1} adet H1 (tek olmalı)` });
   const h2 = count(/<h2[\s>]/gi);
   onpage.push(h2 > 0
     ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2` }
     : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok" });
-  // içerik uzunluğu
-  const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
-  const words = text ? text.split(" ").length : 0;
-  onpage.push(words >= 300
-    ? { label: "İçerik uzunluğu", status: "pass", detail: `~${words} kelime` }
-    : words >= 100
-      ? { label: "İçerik uzunluğu", status: "warn", detail: `~${words} kelime (zayıf içerik)` }
-      : { label: "İçerik uzunluğu", status: "fail", detail: `~${words} kelime (çok az)` });
-  // görsel alt
-  const imgTotal = count(/<img[\s>]/gi);
-  const imgNoAlt = count(/<img(?![^>]*\balt=)[^>]*>/gi);
-  onpage.push(imgTotal === 0 || imgNoAlt === 0
-    ? { label: "Görsel alt metni", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : `${imgTotal} görselin tümünde alt var` }
-    : { label: "Görsel alt metni", status: imgNoAlt / imgTotal > 0.3 ? "fail" : "warn", detail: `${imgNoAlt}/${imgTotal} görselde alt metni eksik` });
-  // linkler
+  onpage.push(page.words >= 300
+    ? { label: "İçerik uzunluğu", status: "pass", detail: `~${page.words} kelime` }
+    : page.words >= 100
+      ? { label: "İçerik uzunluğu", status: "warn", detail: `~${page.words} kelime (zayıf içerik)` }
+      : { label: "İçerik uzunluğu", status: "fail", detail: `~${page.words} kelime (çok az)` });
   const hrefs = Array.from(html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)).map((m) => m[1]);
   let internal = 0, external = 0;
   for (const href of hrefs) {
-    if (/^https?:\/\//i.test(href)) { try { new URL(href).host === host ? internal++ : external++; } catch {} }
+    if (/^https?:\/\//i.test(href)) { try { new URL(href).host === page.host ? internal++ : external++; } catch {} }
     else if (href.startsWith("/")) internal++;
   }
   onpage.push(internal > 0
     ? { label: "İç bağlantılar", status: "pass", detail: `${internal} iç link, ${external} dış link` }
     : { label: "İç bağlantılar", status: "warn", detail: "İç bağlantı bulunamadı" });
-  // dil & hreflang
   onpage.push(has(/<html[^>]+lang=["'][^"']+["']/i)
     ? { label: "Dil etiketi (html lang)", status: "pass", detail: "Tanımlı" }
     : { label: "Dil etiketi (html lang)", status: "warn", detail: "Tanımsız" });
-  const hreflang = count(/hreflang=["'][^"']+["']/gi);
-  onpage.push(hreflang > 0
-    ? { label: "hreflang (çok pazar/uluslararası)", status: "pass", detail: `${hreflang} alternatif dil/pazar bağlantısı` }
-    : { label: "hreflang (çok pazar/uluslararası)", status: "warn", detail: "hreflang yok — pazarlar arası SEO zayıf" });
-  onpage.push(has(/<meta[^>]+name=["']viewport["']/i)
-    ? { label: "Mobil viewport", status: "pass", detail: "Tanımlı" }
-    : { label: "Mobil viewport", status: "fail", detail: "Yok — mobil uyumsuz" });
-
-  // ── GEO / yapısal veri (AI motorları) ──
+  const hreflangN = count(/hreflang=["'][^"']+["']/gi);
+  onpage.push(hreflangN > 0
+    ? { label: "hreflang (girilen sayfa)", status: "pass", detail: `${hreflangN} alternatif dil/pazar bağlantısı` }
+    : { label: "hreflang (girilen sayfa)", status: "warn", detail: "hreflang yok — pazarlar arası SEO zayıf" });
+  // Site geneli on-page bulguları — URL listeleriyle
+  if (sitewide) {
+    const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
+    const dupUrls = (key: "title" | "desc") => {
+      const map = new Map<string, string[]>();
+      P.forEach((p) => { const v = norm(p[key]); if (!v) return; if (!map.has(v)) map.set(v, []); map.get(v)!.push(p.url); });
+      const out: string[] = [];
+      map.forEach((list) => { if (list.length > 1) out.push(...list); });
+      return out;
+    };
+    const live = (p: PageInfo) => p.status > 0 && p.status < 400;
+    onpage.push(siteCheck("Eksik başlık (site geneli)", of((p) => live(p) && !p.title), 0,
+      "Tüm sayfalarda başlık var", (n) => `${n} sayfada başlık yok`, FIX["Sayfa başlığı (title)"]!));
+    onpage.push(siteCheck("Yinelenen başlıklar (site geneli)", dupUrls("title"), 5,
+      "Tekrarlayan başlık yok", (n) => `${n} sayfada tekrar eden başlık`, "Aynı başlığı taşıyan sayfalara benzersiz title verin."));
+    onpage.push(siteCheck("Uzun başlık >60 (site geneli)", of((p) => p.titleLen > 60), 10,
+      "Başlık uzunlukları uygun", (n) => `${n} sayfada başlık çok uzun`, "Başlıkları 60 karakterin altına indirin; SERP'te kesilmesin."));
+    onpage.push(siteCheck("Eksik meta açıklama (site geneli)", of((p) => live(p) && !p.desc), Math.floor(N / 2),
+      "Tüm sayfalarda meta var", (n) => `${n} sayfada meta açıklama yok`, FIX["Meta açıklama"]!));
+    onpage.push(siteCheck("Yinelenen meta açıklamalar (site geneli)", dupUrls("desc"), 5,
+      "Tekrarlayan meta yok", (n) => `${n} sayfada tekrar eden meta`, "Aynı meta açıklamayı taşıyan sayfalara benzersiz açıklama yazın."));
+    onpage.push(siteCheck("Meta uzunluğu 50–160 dışı (site geneli)", of((p) => !!p.desc && (p.descLen < 50 || p.descLen > 160)), 10,
+      "Meta uzunlukları uygun", (n) => `${n} sayfada meta ideal aralık dışı`, FIX["Meta açıklama"]!));
+    onpage.push(siteCheck("Eksik H1 (site geneli)", of((p) => live(p) && p.h1 === 0), Math.floor(N / 2),
+      "Tüm sayfalarda H1 var", (n) => `${n} sayfada ham HTML'de H1 yok`, FIX["H1 başlığı"]!));
+    onpage.push(siteCheck("Birden fazla H1 (site geneli)", of((p) => p.h1 > 1), 10,
+      "Her sayfada tek H1", (n) => `${n} sayfada birden fazla H1`, "Sayfa başına tek H1 kullanın; diğerlerini H2/H3'e çevirin."));
+    onpage.push(siteCheck("Zayıf içerik <200 kelime (site geneli)", of((p) => live(p) && p.words < 200), 10,
+      "İçerik uzunlukları yeterli", (n) => `${n} sayfada içerik çok az`, FIX["İçerik uzunluğu"]!));
+  }
+  // ═══ GÖRSELLER ═══
+  const imgTotal = count(/<img[\s>]/gi);
+  const imgNoAlt = count(/<img(?![^>]*\balt=)[^>]*>/gi);
+  if (sitewide) {
+    images.push(siteCheck("Görsel alt metni eksik (site geneli)", of((p) => p.imgTotal > 0 && p.imgNoAlt / p.imgTotal > 0.3), 10,
+      "Görsel alt metinleri yeterli", (n) => `${n} sayfada görsellerin çoğunda alt yok`, FIX["Alt metni kapsamı"]!));
+  } else {
+    images.push(imgTotal === 0 || imgNoAlt === 0
+      ? { label: "Alt metni kapsamı", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : `${imgTotal} görselin tümünde alt var` }
+      : { label: "Alt metni kapsamı", status: imgNoAlt / imgTotal > 0.3 ? "fail" : "warn", detail: `${imgNoAlt}/${imgTotal} görselde alt eksik` });
+  }
+  const modernImg = count(/\.(webp|avif)\b/gi);
+  const lazyImg = count(/loading=["']lazy["']/gi);
+  const dimImg = count(/<img[^>]*\bwidth=["']?\d/gi);
+  images.push(imgTotal === 0
+    ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: "Görsel yok" }
+    : modernImg > 0
+      ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: `${modernImg} modern format görsel` }
+      : { label: "Modern format (WebP/AVIF)", status: "warn", detail: "WebP/AVIF kullanılmıyor — dosya boyutu büyük" });
+  images.push(imgTotal <= 3
+    ? { label: "Lazy loading", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : "Az görsel — gerek yok" }
+    : lazyImg > 0
+      ? { label: "Lazy loading", status: "pass", detail: `${lazyImg} görsel lazy yükleniyor` }
+      : { label: "Lazy loading", status: "warn", detail: "loading=lazy yok — ilk yük ağırlaşır" });
+  images.push(imgTotal === 0
+    ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsel yok" }
+    : dimImg / imgTotal > 0.6
+      ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsellerin çoğunda width/height var" }
+      : { label: "Boyut tanımı (CLS)", status: "warn", detail: "Çoğu görselde boyut yok — kayma (CLS) riski" });
+  // ═══ MOBİL ═══
+  const deviceWidth = has(/name=["']viewport["'][^>]*content=["'][^"']*width=device-width/i);
+  if (sitewide) {
+    mobile.push(siteCheck("Viewport eksik (site geneli)", of((p) => p.status > 0 && p.status < 400 && !p.viewport), 0,
+      "Tüm sayfalarda viewport var", (n) => `${n} sayfada viewport meta yok`, FIX["Mobil viewport"]!));
+  }
+  mobile.push(deviceWidth
+    ? { label: "Responsive viewport", status: "pass", detail: "width=device-width tanımlı" }
+    : { label: "Responsive viewport", status: "fail", detail: "Responsive viewport yok — mobilde bozulur" });
+  mobile.push(has(/name=["']theme-color["']/i)
+    ? { label: "Tema rengi (theme-color)", status: "pass", detail: "Tanımlı" }
+    : { label: "Tema rengi (theme-color)", status: "warn", detail: "Yok" });
+  mobile.push(has(/rel=["'](apple-touch-icon|icon)["']/i)
+    ? { label: "Dokunmatik ikon / favicon", status: "pass", detail: "Tanımlı" }
+    : { label: "Dokunmatik ikon / favicon", status: "warn", detail: "Yok" });
+  // ═══ GEO / YAPISAL VERİ (AI motorları) ═══
   const ldBlocks = Array.from(html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)).map((m) => m[1]);
   const ldTypes = new Set<string>();
   for (const b of ldBlocks) {
@@ -375,9 +751,16 @@ async function crawl(inputUrl: string): Promise<CrawlResult> {
     } catch {}
   }
   const typeList = Array.from(ldTypes);
-  geo.push(ldBlocks.length > 0
-    ? { label: "Yapısal veri (JSON-LD)", status: "pass", detail: `${ldBlocks.length} blok${typeList.length ? " — " + typeList.slice(0, 6).join(", ") : ""}` }
-    : { label: "Yapısal veri (JSON-LD)", status: "fail", detail: "Schema.org verisi yok — AI motorları içeriği zor anlar" });
+  if (sitewide) {
+    geo.push(siteCheck("Yapısal veri JSON-LD yok (site geneli)", of((p) => p.status > 0 && p.status < 400 && !p.jsonld), Math.floor(N / 2),
+      "Tüm sayfalarda schema var", (n) => `${n} sayfanın ham HTML'inde JSON-LD yok — AI crawler'lar şemasız görüyor`, FIX["Yapısal veri (JSON-LD)"]!));
+    geo.push(siteCheck("hreflang eksik (site geneli)", of((p) => p.status > 0 && p.status < 400 && p.hreflang === 0), Math.floor(N / 2),
+      "Sayfalarda hreflang tanımlı", (n) => `${n} sayfada hreflang yok — çok pazarlı yapı için kritik`, FIX["hreflang (girilen sayfa)"]!));
+  } else {
+    geo.push(ldBlocks.length > 0
+      ? { label: "Yapısal veri (JSON-LD)", status: "pass", detail: `${ldBlocks.length} blok${typeList.length ? " — " + typeList.slice(0, 6).join(", ") : ""}` }
+      : { label: "Yapısal veri (JSON-LD)", status: "fail", detail: "Ham HTML'de Schema.org verisi yok — AI motorları içeriği zor anlar" });
+  }
   const hasOrg = typeList.some((t) => /organization/i.test(t));
   geo.push(hasOrg
     ? { label: "Kurum şeması (Organization)", status: "pass", detail: "Marka/kurum kimliği tanımlı" }
@@ -404,242 +787,108 @@ async function crawl(inputUrl: string): Promise<CrawlResult> {
   geo.push(has(/name=["']twitter:card["']/i)
     ? { label: "Twitter/X kartı", status: "pass", detail: "Var" }
     : { label: "Twitter/X kartı", status: "warn", detail: "Yok" });
-  geo.push(words >= 600
-    ? { label: "İçerik derinliği (AI için)", status: "pass", detail: `~${words} kelime — kapsamlı, alıntılanabilir` }
-    : { label: "İçerik derinliği (AI için)", status: "warn", detail: `~${words} kelime — AI motorları için sığ olabilir` });
-
-  // ── Görseller ──
-  const modernImg = count(/\.(webp|avif)\b/gi);
-  const lazyImg = count(/loading=["']lazy["']/gi);
-  const dimImg = count(/<img[^>]*\bwidth=["']?\d/gi);
-  images.push(imgTotal === 0 || imgNoAlt === 0
-    ? { label: "Alt metni kapsamı", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : `${imgTotal} görselin tümünde alt var` }
-    : { label: "Alt metni kapsamı", status: imgNoAlt / imgTotal > 0.3 ? "fail" : "warn", detail: `${imgNoAlt}/${imgTotal} görselde alt eksik` });
-  images.push(imgTotal === 0
-    ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: "Görsel yok" }
-    : modernImg > 0
-      ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: `${modernImg} modern format görsel` }
-      : { label: "Modern format (WebP/AVIF)", status: "warn", detail: "WebP/AVIF kullanılmıyor — dosya boyutu büyük" });
-  images.push(imgTotal <= 3
-    ? { label: "Lazy loading", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : "Az görsel — gerek yok" }
-    : lazyImg > 0
-      ? { label: "Lazy loading", status: "pass", detail: `${lazyImg} görsel lazy yükleniyor` }
-      : { label: "Lazy loading", status: "warn", detail: "loading=lazy yok — ilk yük ağırlaşır" });
-  images.push(imgTotal === 0
-    ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsel yok" }
-    : dimImg / imgTotal > 0.6
-      ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsellerin çoğunda width/height var" }
-      : { label: "Boyut tanımı (CLS)", status: "warn", detail: "Çoğu görselde boyut yok — kayma (CLS) riski" });
-
-  // ── Mobil ──
-  const deviceWidth = has(/name=["']viewport["'][^>]*content=["'][^"']*width=device-width/i);
-  mobile.push(deviceWidth
-    ? { label: "Responsive viewport", status: "pass", detail: "width=device-width tanımlı" }
-    : { label: "Responsive viewport", status: "fail", detail: "Responsive viewport yok — mobilde bozulur" });
-  mobile.push(has(/name=["']theme-color["']/i)
-    ? { label: "Tema rengi (theme-color)", status: "pass", detail: "Tanımlı" }
-    : { label: "Tema rengi (theme-color)", status: "warn", detail: "Yok" });
-  mobile.push(has(/rel=["'](apple-touch-icon|icon)["']/i)
-    ? { label: "Dokunmatik ikon / favicon", status: "pass", detail: "Tanımlı" }
-    : { label: "Dokunmatik ikon / favicon", status: "warn", detail: "Yok" });
-
-  return {
-    groups: [
-      { id: "tech", title: "Teknik SEO & Taranabilirlik · girilen sayfa", checks: tech },
-      { id: "onpage", title: "Sayfa İçi SEO · girilen sayfa", checks: onpage },
-      { id: "images", title: "Görseller · girilen sayfa", checks: images },
-      { id: "mobile", title: "Mobil Uyumluluk · girilen sayfa", checks: mobile },
-      { id: "geo", title: "GEO / Yapısal Veri · girilen sayfa", checks: geo },
-    ],
-    pageText: text,
-    title: title ?? "",
-    desc: desc ?? "",
-    origin,
-  };
-}
-
-// ── Site geneli tarayıcı: sitemap'ten 1500 URL'e kadar ─────────────────────
-const CRAWL_LIMIT = 1500;
-async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup | null> {
-  if (!origin) return null;
-  try {
-    const extractLocs = (xml: string) =>
-      Array.from(xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)).map((m) => m[1].trim()).filter((u) => /^https?:\/\//i.test(u));
-
-    // kapsam: girilen URL'nin ilk yol segmenti (örn. /tr) — sadece o dil/ülke
-    let prefix = "";
-    let country = "";
-    try {
-      const seg = new URL(scopeUrl).pathname.split("/").filter(Boolean)[0];
-      if (seg) { prefix = "/" + seg; country = seg; }
-    } catch {}
-    const inScope = (u: string) => {
-      if (!prefix) return true;
-      try { const p = new URL(u).pathname; return p === prefix || p.startsWith(prefix + "/"); } catch { return false; }
-    };
-
-    // robots.txt'teki TÜM sitemap'ler → kapsamla eşleşeni seç (Bosch her ülke için ayrı sitemap listeler)
-    const robots = await safeFetchText(origin + "/robots.txt", 6000);
-    const sitemaps = Array.from(robots.text.matchAll(/sitemap:\s*(\S+)/gi)).map((m) => m[1].trim());
-    let sitemapUrl = origin + "/sitemap.xml";
-    if (prefix) {
-      const byPath = sitemaps.find((s) => { try { return new URL(s).pathname.startsWith(prefix + "/"); } catch { return false; } });
-      const byToken = sitemaps.find((s) => new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i").test(s));
-      sitemapUrl = byPath || byToken || sitemaps[0] || sitemapUrl;
-    } else if (sitemaps[0]) {
-      sitemapUrl = sitemaps[0];
-    }
-    const root = await fetchXml(sitemapUrl, 10000);
-    if (!root.ok) return null;
-
-    // sitemap index ise alt-sitemap'leri gez — kapsamdaki (örn. TR) alt-sitemap'leri öne al
-    let urls: string[] = [];
-    if (/<sitemapindex/i.test(root.text)) {
-      let children = extractLocs(root.text);
-      if (country) {
-        const rx = new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i");
-        children = [...children.filter((c) => rx.test(c)), ...children.filter((c) => !rx.test(c))];
-      }
-      children = children.slice(0, 40);
-      for (const child of children) {
-        if (urls.filter(inScope).length >= CRAWL_LIMIT) break;
-        const sub = await fetchXml(child, 9000);
-        if (sub.ok) urls.push(...extractLocs(sub.text));
-      }
-    } else {
-      urls = extractLocs(root.text);
-    }
-
-    // KATI kapsam filtresi: yalnızca girilen dil/ülke (örn. /tr) sayfaları
-    urls = Array.from(new Set(urls.filter(inScope))).slice(0, CRAWL_LIMIT);
-    const totalFound = urls.length;
-    if (totalFound < 2) return null;
-
-    // tarama: eşzamanlı havuz + süre bütçesi (patlamayı önler) — her sayfada tam denetim
-    interface PageInfo {
-      url: string; title: string | null; desc: string | null; titleLen: number; descLen: number;
-      h1: number; jsonld: boolean; canonical: boolean; noindex: boolean;
-      imgTotal: number; imgNoAlt: number; words: number;
-    }
-    const pages: PageInfo[] = [];
-    const deadline = Date.now() + 180000;
-    const pool = 20;
-    let idx = 0;
-    async function worker() {
-      while (idx < urls.length && Date.now() < deadline) {
-        const u = urls[idx++];
-        const r = await safeFetchText(u, 5000);
-        if (!r.ok) continue;
-        const t = r.text;
-        const title = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
-        const desc = (t.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim() || null;
-        const h1 = (t.match(/<h1[\s>]/gi) || []).length;
-        const jsonld = /<script[^>]+application\/ld\+json/i.test(t);
-        const canonical = /<link[^>]+rel=["']canonical["']/i.test(t);
-        const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(t);
-        const imgTotal = (t.match(/<img[\s>]/gi) || []).length;
-        const imgNoAlt = (t.match(/<img(?![^>]*\balt=)[^>]*>/gi) || []).length;
-        const body = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-        const words = body ? body.split(" ").length : 0;
-        pages.push({ url: u, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words });
-      }
-    }
-    await Promise.all(Array.from({ length: pool }, worker));
-    if (pages.length < 2) return null;
-
-    const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
-    const dupUrls = (key: "title" | "desc") => {
-      const map = new Map<string, string[]>();
-      pages.forEach((p) => {
-        const v = norm(p[key]);
-        if (!v) return;
-        if (!map.has(v)) map.set(v, []);
-        map.get(v)!.push(p.url);
-      });
-      const out: string[] = [];
-      map.forEach((list) => { if (list.length > 1) out.push(...list); });
-      return out;
-    };
-    const urlsOf = (pred: (p: PageInfo) => boolean) => pages.filter(pred).map((p) => p.url);
-    const dupTitleUrls = dupUrls("title");
-    const dupDescUrls = dupUrls("desc");
-    const missTitleUrls = urlsOf((p) => !p.title);
-    const missDescUrls = urlsOf((p) => !p.desc);
-    const missH1Urls = urlsOf((p) => p.h1 === 0);
-    const multiH1Urls = urlsOf((p) => p.h1 > 1);
-    const noSchemaUrls = urlsOf((p) => !p.jsonld);
-    const noCanonicalUrls = urlsOf((p) => !p.canonical);
-    const noindexUrls = urlsOf((p) => p.noindex);
-    const altUrls = urlsOf((p) => p.imgTotal > 0 && p.imgNoAlt / p.imgTotal > 0.3);
-    const thinUrls = urlsOf((p) => p.words < 200);
-    const longTitleUrls = urlsOf((p) => p.titleLen > 60);
-    const shortDescUrls = urlsOf((p) => !!p.desc && (p.descLen < 50 || p.descLen > 160));
-
-    const scopeNote = prefix ? ` · kapsam: ${prefix}` : "";
-    const partial = pages.length < totalFound ? ` · süre limitinden ${totalFound} URL'nin ${pages.length}'i` : "";
-    const mk = (label: string, bad: string[], failOver: number, okMsg: string, badMsg: (n: number) => string): Check =>
-      bad.length === 0
-        ? { label, status: "pass", detail: okMsg }
-        : { label, status: bad.length > failOver ? "fail" : "warn", detail: badMsg(bad.length), urls: bad };
-
-    const checks: Check[] = [
-      { label: "Taranan sayfalar", status: "pass", detail: `${pages.length} sayfa tarandı${partial}${scopeNote} · limit ${CRAWL_LIMIT}`, urls: pages.map((p) => p.url) },
-      mk("Eksik başlık (title)", missTitleUrls, 0, "Tüm sayfalarda başlık var", (n) => `${n} sayfada başlık yok`),
-      mk("Yinelenen başlıklar", dupTitleUrls, 5, "Tekrarlayan başlık yok", (n) => `${n} sayfada tekrar eden başlık`),
-      mk("Uzun başlık (>60 karakter)", longTitleUrls, 10, "Başlık uzunlukları uygun", (n) => `${n} sayfada başlık çok uzun`),
-      mk("Eksik meta açıklama", missDescUrls, Math.floor(pages.length / 2), "Tüm sayfalarda meta var", (n) => `${n} sayfada meta açıklama yok`),
-      mk("Yinelenen meta açıklamalar", dupDescUrls, 5, "Tekrarlayan meta yok", (n) => `${n} sayfada tekrar eden meta`),
-      mk("Meta açıklama uzunluğu (50–160 dışı)", shortDescUrls, 10, "Meta uzunlukları uygun", (n) => `${n} sayfada meta ideal aralık dışı`),
-      mk("Eksik H1", missH1Urls, Math.floor(pages.length / 2), "Tüm sayfalarda H1 var", (n) => `${n} sayfada H1 yok`),
-      mk("Birden fazla H1", multiH1Urls, 10, "Her sayfada tek H1", (n) => `${n} sayfada birden fazla H1`),
-      mk("Yapısal veri (JSON-LD) yok", noSchemaUrls, Math.floor(pages.length / 2), "Tüm sayfalarda schema var", (n) => `${n} sayfada JSON-LD yok`),
-      mk("Canonical yok", noCanonicalUrls, Math.floor(pages.length / 2), "Tüm sayfalarda canonical var", (n) => `${n} sayfada canonical yok`),
-      mk("Görsel alt metni eksik", altUrls, 10, "Görsel alt metinleri yeterli", (n) => `${n} sayfada görsellerin çoğunda alt yok`),
-      mk("Zayıf içerik (<200 kelime)", thinUrls, 10, "İçerik uzunlukları yeterli", (n) => `${n} sayfada içerik çok az`),
-      mk("noindex sayfalar", noindexUrls, 0, "noindex sayfa yok", (n) => `${n} sayfa dizine kapalı (noindex)`),
-    ];
-    return { id: "site", title: `Site Geneli Taraması — ${pages.length} sayfa (Screaming Frog tarzı)`, checks };
-  } catch {
-    return null;
+  geo.push(page.words >= 600
+    ? { label: "İçerik derinliği (AI için)", status: "pass", detail: `~${page.words} kelime — kapsamlı, alıntılanabilir` }
+    : { label: "İçerik derinliği (AI için)", status: "warn", detail: `~${page.words} kelime — AI motorları için sığ olabilir` });
+  // CSR tespiti: JS framework imzası + ham HTML'de içerik/H1/şema eksikliği
+  const fw = has(/__NEXT_DATA__|id=["']__next["']|data-reactroot|ng-version=|id=["']app["'][^>]*><\/div>|window\.__NUXT__/i);
+  const thinRaw = page.words < 150 || h1 === 0 || ldBlocks.length === 0;
+  if (fw && thinRaw) {
+    geo.push({ label: "Client-side rendering (CSR) riski", status: "warn", detail: "JS framework tespit edildi ve ham HTML'de kritik içerik eksik. Googlebot render eder ama AI crawler'lar (GPTBot, ClaudeBot, PerplexityBot) JS çalıştırmaz — sayfayı bu eksik haliyle görürler." });
+  } else {
+    geo.push({ label: "Client-side rendering (CSR) riski", status: "pass", detail: "Kritik içerik ham HTML'de mevcut görünüyor" });
   }
+  // ═══ PERFORMANS ═══
+  // Genel skor bilgi satırı olarak (metriklerle çifte sayım olmasın diye skora girmez)
+  perf.push({ label: "Performans skoru (Lighthouse)", status: scoreToStatus(lh.perfScore), info: true, detail: lh.perfScore == null ? "—" : `${Math.round(lh.perfScore * 100)} / 100` });
+  perf.push(...lh.metrics.map((m) => ({ label: m.key, status: m.status, detail: m.value })));
+  // CrUX gerçek kullanıcı INP — veri geldiyse normal Check
+  if (lh.inpMs != null) {
+    const inpStatus: CheckStatus = lh.inpMs < 200 ? "pass" : lh.inpMs < 500 ? "warn" : "fail";
+    perf.push({ label: "INP (gerçek kullanıcı)", status: inpStatus, detail: `${lh.inpMs} ms (CrUX)` });
+  }
+  // Dışarıdan gelen ek kontroller (async fetch gerektirenler)
+  if (extra.redirectChain) tech.push(extra.redirectChain);
+  if (extra.brokenLinks) tech.push(extra.brokenLinks);
+  if (extra.aiAccess) geo.push(extra.aiAccess);
+  if (extra.llmsTxt) geo.push(extra.llmsTxt);
+  // URL hijyeni (site geneli, ek fetch YOK — mevcut P dizisinden)
+  if (sitewide) {
+    const badUrls = urlHygieneBad(P);
+    tech.push(siteCheck("URL hijyeni (site geneli)", badUrls, 10,
+      "URL yapıları temiz", (n) => `${n} URL uzun/büyük harf/underscore/derin`, FIX["URL hijyeni (site geneli)"]!));
+  }
+  // Grup içi sıralama: hata → uyarı → başarılı (info satırları en üstte kalır)
+  const order: Record<CheckStatus, number> = { fail: 0, warn: 1, pass: 2 };
+  const sortChecks = (arr: Check[]) => arr.sort((a, b) => (a.info ? -1 : b.info ? 1 : order[a.status] - order[b.status]));
+  const groups: CheckGroup[] = [
+    { id: "tech", title: `Teknik SEO & Taranabilirlik${scopeTag}`, checks: sortChecks(tech) },
+    { id: "onpage", title: `Sayfa İçi SEO${scopeTag}`, checks: sortChecks(onpage) },
+    { id: "images", title: `Görseller${scopeTag}`, checks: sortChecks(images) },
+    { id: "mobile", title: `Mobil Uyumluluk${scopeTag}`, checks: sortChecks(mobile) },
+    { id: "geo", title: `GEO / Yapısal Veri${scopeTag}`, checks: sortChecks(geo) },
+    { id: "perf", title: "Performans (hız) · girilen sayfa", checks: sortChecks(perf) },
+  ];
+  return groups;
 }
-
+// ── Ana giriş noktası ──────────────────────────────────────────────────────
 export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const profile = await getProfile();
   if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
-
   let url = (rawUrl || "").trim();
   if (!url) return { ok: false, error: "URL boş" };
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-
-  const [lh, crawlRes] = await Promise.all([fetchLighthouse(url), crawl(url)]);
-  if (!lh.ok) return { ok: false, error: lh.error };
-
-  // AI analizi + sınırlı site crawl (paralel)
-  const [ai, siteGroup] = await Promise.all([
-    analyzeContentAI({ url: lh.finalUrl, title: crawlRes.title, metaDescription: crawlRes.desc, pageText: crawlRes.pageText }).catch(() => null),
-    siteCrawl(crawlRes.origin, lh.finalUrl).catch(() => null),
+  // 1) Mobil + Desktop PSI + girilen sayfa paralel (desktop hatası mobili bozmaz)
+  const [lh, lhDesktop, page] = await Promise.all([
+    fetchLighthouse(url, "mobile"),
+    fetchLighthouse(url, "desktop"),
+    fetchEnteredPage(url),
   ]);
-
-  // Performans grubunu (metrik durumlarından) ekle
-  const perfChecks: Check[] = [
-    { label: "Performans skoru (Lighthouse)", status: scoreToStatus(lh.perfScore), detail: lh.perfScore == null ? "—" : `${Math.round(lh.perfScore * 100)} / 100` },
-    ...lh.metrics.map((m) => ({ label: m.key, status: m.status, detail: m.value })),
-  ];
-  const groups: CheckGroup[] = [...crawlRes.groups, { id: "perf", title: "Performans (hız) · girilen sayfa", checks: perfChecks }];
-  if (siteGroup) groups.push(siteGroup);
-
-  // Her kontrole "öneri / nasıl düzeltilir" metnini bağla
+  if (!lh.ok) return { ok: false, error: lh.error };
+  if (!page.ok) return { ok: false, error: "Sayfa HTML'i alınamadı (zaman aşımı veya engel)." };
+  // 2) AI + site tarama + görsel/link HEAD + redirect zinciri + robots + llms.txt paralel
+  const [ai, site, imagesList, linksRes, redirectChain, robotsRes, llmsTxt] = await Promise.all([
+    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text }).catch(() => null),
+    siteCrawl(page.origin, lh.finalUrl).catch(() => null),
+    fetchImagesList(page.html, page.finalUrl).catch(() => [] as AuditData["imagesList"]),
+    fetchLinksList(page.html, page.finalUrl, page.host).catch(() => ({ list: [], broken: [] as string[] })),
+    fetchRedirectChain(url).catch(() => [] as { url: string; status: number }[]),
+    safeFetchText(page.origin + "/robots.txt", 6000),
+    fetchLlmsTxt(page.origin).catch(() => false),
+  ]);
+  // v3 türetmeler (girilen sayfanın html'inden — uydurma yok)
+  const serp = { title: page.title, desc: page.desc, url: page.finalUrl };
+  const social = extractSocial(page.html);
+  const headings = extractHeadings(page.html);
+  const contentStats = computeContentStats(page.html, page.text, page.words);
+  const aiAccess = parseAiAccess(robotsRes.text || "");
+  const perfDesktop = lhDesktop.ok ? { score: lhDesktop.perfScore, metrics: lhDesktop.metrics } : null;
+  const crux = lh.crux;
+  // Ek kontroller
+  const brokenLinks: Check | null = linksRes.broken.length > 0
+    ? { label: "Kırık linkler (girilen sayfa)", status: "fail", detail: `${linksRes.broken.length} bağlantı 4xx/5xx döndürüyor`, urls: linksRes.broken.slice(0, URL_CAP), fix: FIX["Kırık linkler (girilen sayfa)"] }
+    : null;
+  const redirectChainCheck: Check | null = redirectChain.length > 1
+    ? { label: "Yönlendirme zinciri", status: "warn", detail: `${redirectChain.length} adımlı yönlendirme zinciri`, urls: redirectChain.map((s: { url: string; status: number }) => `${s.url} (${s.status})`), fix: FIX["Yönlendirme zinciri"] }
+    : null;
+  const blockedBots = aiAccess.filter((b) => !b.allowed).map((b) => b.bot);
+  const aiAccessCheck: Check = blockedBots.length > 0
+    ? { label: "AI bot erişimi", status: "warn", detail: `AI botlarına kapalı: ${blockedBots.join(", ")}`, fix: FIX["AI bot erişimi"] }
+    : { label: "AI bot erişimi", status: "pass", detail: "AI botları (GPTBot, ClaudeBot, PerplexityBot…) engellenmemiş" };
+  const llmsTxtCheck: Check = llmsTxt
+    ? { label: "llms.txt", status: "pass", detail: "llms.txt mevcut" }
+    : { label: "llms.txt", status: "warn", detail: "llms.txt yok (AI motorları için opsiyonel rehber)", fix: FIX["llms.txt"] };
+  // 3) Grupları kur (site geneli bulgular kategorilere dağıtılmış halde)
+  const groups = buildGroups(page, site, lh, { brokenLinks, redirectChain: redirectChainCheck, aiAccess: aiAccessCheck, llmsTxt: llmsTxtCheck });
+  // Öneri metinlerini bağla (elle atanmamışsa)
   for (const g of groups) g.checks = g.checks.map((c) => ({ ...c, fix: c.fix ?? FIX[c.label] }));
-
-  // Sağlık skoru: tüm kontrollerden ağırlıklı
-  const all = groups.flatMap((g) => g.checks);
-  const errors = all.filter((c) => c.status === "fail").length;
-  const warnings = all.filter((c) => c.status === "warn").length;
-  const passes = all.filter((c) => c.status === "pass").length;
-  const total = all.length || 1;
+  // 4) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0
+  const scorable = groups.flatMap((g) => g.checks).filter((c) => !c.info);
+  const errors = scorable.filter((c) => c.status === "fail").length;
+  const warnings = scorable.filter((c) => c.status === "warn").length;
+  const passes = scorable.filter((c) => c.status === "pass").length;
+  const total = scorable.length || 1;
   const health = Math.round((100 * (passes + warnings * 0.5)) / total);
-
   return {
     ok: true,
     data: {
@@ -651,6 +900,17 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       opportunities: lh.opportunities,
       groups,
       ai,
+      serp,
+      social,
+      headings,
+      contentStats,
+      imagesList: imagesList ?? [],
+      linksList: linksRes.list,
+      perfDesktop,
+      crux,
+      aiAccess,
+      llmsTxt,
+      redirectChain,
     },
   };
 }

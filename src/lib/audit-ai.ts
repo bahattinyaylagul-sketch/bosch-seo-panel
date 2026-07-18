@@ -48,6 +48,7 @@ export async function analyzeContentAI(input: {
     "Bu içeriği KLASİK SEO ve AI/LLM görünürlüğü açısından değerlendir.",
     "Her boyut için 0-100 arası bir skor ve TEK cümlelik kısa, somut Türkçe not ver.",
     "Skorlar gerçekçi olsun; içerik zayıfsa düşük ver. Abartma.",
+    "SADECE verilen sayfa metnine, başlığa ve meta açıklamaya dayan. Verilmeyen hiçbir bilgiyi (trafik, sıralama, backlink, rakip, tarih, istatistik, URL) üretme; bilmiyorsan alanı boş bırak. Yanıtı SADECE geçerli JSON olarak ver.",
     "SADECE şu JSON şemasıyla yanıt ver, başka hiçbir metin ekleme:",
     JSON.stringify({
       overall: "number 0-100",
@@ -93,6 +94,7 @@ export async function analyzeContentAI(input: {
     const msg = await client.messages.create({
       model: MODEL,
       max_tokens: 1600,
+      temperature: 0.2,
       system,
       messages: [{ role: "user", content: payload }],
     });
@@ -114,6 +116,12 @@ export async function analyzeContentAI(input: {
     if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
     j = JSON.parse(s);
   } catch {
+    return null;
+  }
+
+  // Şema-uyum guard'ı: zorunlu alanlar yoksa kısmi/uydurma nesne kurma, null dön
+  if (!j || typeof j !== "object" || typeof j.overall !== "number" ||
+      j.contentQuality == null || j.eeat == null || j.aiVisibility == null || j.geo == null) {
     return null;
   }
 

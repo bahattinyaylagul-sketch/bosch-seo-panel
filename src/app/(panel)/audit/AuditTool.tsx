@@ -789,6 +789,14 @@ export default function AuditTool() {
             </div>
           ))}
 
+          {/* ── AI / GEO analiz yapılamadıysa sebebi göster ── */}
+          {!res.ai && res.aiError && filter === "all" && (
+            <div className="mt-8 rounded-bosch border border-amber-300 bg-amber-50 p-4">
+              <div className="text-sm font-semibold text-ink mb-1">AI Görünürlük & GEO Analizi çalışmadı</div>
+              <p className="text-xs text-ink-body">{res.aiError}</p>
+            </div>
+          )}
+
           {/* ── AI / GEO ── */}
           {res.ai && filter === "all" && (
             <div className="mt-8">

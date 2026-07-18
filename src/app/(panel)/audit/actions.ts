@@ -35,6 +35,7 @@ export interface AuditData {
   opportunities: { title: string; value: string }[];
   groups: CheckGroup[];
   ai: AiAnalysis | null;
+  aiError?: string;
   // ── v3 ek alanları (opsiyonel) ──
   serp?: { title: string | null; desc: string | null; url: string };
   social?: { ogTitle: string | null; ogDesc: string | null; ogImage: string | null; twitterCard: boolean };
@@ -999,10 +1000,12 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const geoModel = process.env.ANTHROPIC_GEO_MODEL || undefined;
   const siteStats = site ? buildSiteAgg(site.pages) : undefined;
   const seoFindings = buildSeoFindings(groups);
+  const aiDiag: { error?: string } = {};
   const [ai, seoPlan] = await Promise.all([
-    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text, siteStats }, { model: geoModel }).catch(() => null),
+    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text, siteStats }, { model: geoModel, diag: aiDiag }).catch((e) => { aiDiag.error = "AI çağrısı başarısız: " + String(e?.message || e).slice(0, 160); return null; }),
     analyzeSeoActionPlan({ url: lh.finalUrl, findings: seoFindings }, { model: geoModel }).catch(() => null),
   ]);
+  const aiError = ai ? undefined : (aiDiag.error || "AI/GEO analizi yapılamadı.");
   // 5) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0
   const allChecks = groups.flatMap((g) => g.checks);
   const scorable = allChecks.filter((c) => !c.info);
@@ -1032,6 +1035,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       opportunities: lh.opportunities,
       groups,
       ai,
+      aiError,
       serp,
       social,
       headings,

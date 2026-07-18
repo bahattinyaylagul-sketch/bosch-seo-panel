@@ -35,14 +35,15 @@ export async function analyzeContentAI(input: {
   metaDescription: string;
   pageText: string;
   siteStats?: string; // site geneli agregat bulgular (yüzdeler) — verilirse tüm site yorumlanır
-}, opts?: { model?: string }): Promise<AiAnalysis | null> {
+}, opts?: { model?: string; diag?: { error?: string } }): Promise<AiAnalysis | null> {
+  const diag = opts?.diag;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) { if (diag) diag.error = "ANTHROPIC_API_KEY tanımlı değil — Vercel ortam değişkenlerine ekleyip yeniden deploy edin."; return null; }
 
   const model = opts?.model || MODEL;
   const client = new Anthropic({ apiKey });
   const text = (input.pageText || "").slice(0, 8000);
-  if (text.replace(/\s/g, "").length < 60) return null; // içerik yok
+  if (text.replace(/\s/g, "").length < 60) { if (diag) diag.error = "Girilen sayfadan yeterli metin çıkarılamadı (JS ile render ediliyor olabilir)."; return null; }
 
   const system = [
     "Sen kıdemli bir SEO + GEO (Generative Engine Optimization) analistisin.",
@@ -108,7 +109,8 @@ export async function analyzeContentAI(input: {
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-  } catch {
+  } catch (e: any) {
+    if (diag) diag.error = "AI çağrısı başarısız: " + String(e?.message || e).slice(0, 160) + " (model adı/kotayı kontrol edin).";
     return null;
   }
 
@@ -122,12 +124,14 @@ export async function analyzeContentAI(input: {
     if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
     j = JSON.parse(s);
   } catch {
+    if (diag) diag.error = "AI yanıtı JSON olarak çözümlenemedi.";
     return null;
   }
 
   // Şema-uyum guard'ı: zorunlu alanlar yoksa kısmi/uydurma nesne kurma, null dön
   if (!j || typeof j !== "object" || typeof j.overall !== "number" ||
       j.contentQuality == null || j.eeat == null || j.aiVisibility == null || j.geo == null) {
+    if (diag) diag.error = "AI yanıtı beklenen şemada gelmedi.";
     return null;
   }
 

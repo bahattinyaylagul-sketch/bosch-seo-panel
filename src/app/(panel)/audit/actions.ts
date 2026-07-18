@@ -1,5 +1,6 @@
 "use server";
 
+import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
 import { analyzeContentAI, type AiAnalysis } from "@/lib/audit-ai";
 
@@ -183,6 +184,27 @@ async function safeFetchText(u: string, ms: number): Promise<{ ok: boolean; stat
     return { ok: r.ok, status: r.status, text };
   } catch {
     return { ok: false, status: 0, text: "" };
+  }
+}
+
+// Sitemap fetch — gzip'li (.xml.gz veya gövdesi gzip) sitemap'leri de açar
+async function fetchXml(u: string, ms: number): Promise<{ ok: boolean; text: string }> {
+  try {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), ms);
+    const r = await fetch(u, { cache: "no-store", signal: c.signal, headers: { "User-Agent": UA } });
+    clearTimeout(t);
+    if (!r.ok) return { ok: false, text: "" };
+    const buf = Buffer.from(await r.arrayBuffer());
+    let text: string;
+    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+      try { text = gunzipSync(buf).toString("utf-8"); } catch { text = buf.toString("utf-8"); }
+    } else {
+      text = buf.toString("utf-8");
+    }
+    return { ok: true, text: text.slice(0, 3_000_000) };
+  } catch {
+    return { ok: false, text: "" };
   }
 }
 
@@ -467,7 +489,7 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
     } else if (sitemaps[0]) {
       sitemapUrl = sitemaps[0];
     }
-    const root = await safeFetchText(sitemapUrl, 9000);
+    const root = await fetchXml(sitemapUrl, 10000);
     if (!root.ok) return null;
 
     // sitemap index ise alt-sitemap'leri gez — kapsamdaki (örn. TR) alt-sitemap'leri öne al
@@ -481,7 +503,7 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
       children = children.slice(0, 40);
       for (const child of children) {
         if (urls.filter(inScope).length >= CRAWL_LIMIT) break;
-        const sub = await safeFetchText(child, 8000);
+        const sub = await fetchXml(child, 9000);
         if (sub.ok) urls.push(...extractLocs(sub.text));
       }
     } else {

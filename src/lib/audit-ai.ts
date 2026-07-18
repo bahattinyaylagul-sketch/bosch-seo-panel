@@ -34,10 +34,12 @@ export async function analyzeContentAI(input: {
   title: string;
   metaDescription: string;
   pageText: string;
-}): Promise<AiAnalysis | null> {
+  siteStats?: string; // site geneli agregat bulgular (yüzdeler) — verilirse tüm site yorumlanır
+}, opts?: { model?: string }): Promise<AiAnalysis | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
+  const model = opts?.model || MODEL;
   const client = new Anthropic({ apiKey });
   const text = (input.pageText || "").slice(0, 8000);
   if (text.replace(/\s/g, "").length < 60) return null; // içerik yok
@@ -49,6 +51,9 @@ export async function analyzeContentAI(input: {
     "Her boyut için 0-100 arası bir skor ve TEK cümlelik kısa, somut Türkçe not ver.",
     "Skorlar gerçekçi olsun; içerik zayıfsa düşük ver. Abartma.",
     "SADECE verilen sayfa metnine, başlığa ve meta açıklamaya dayan. Verilmeyen hiçbir bilgiyi (trafik, sıralama, backlink, rakip, tarih, istatistik, URL) üretme; bilmiyorsan alanı boş bırak. Yanıtı SADECE geçerli JSON olarak ver.",
+    input.siteStats
+      ? "Sana ayrıca SİTE GENELİ agregat bulgular (yüzdelerle) verildi. Değerlendirmeni tek sayfaya değil TÜM SİTEYE göre yap. Bu sayıları SEN ÜRETME; verilen istatistikleri yorumla. Örnek sayfa metni sadece ton/derinlik için temsilîdir."
+      : "",
     "SADECE şu JSON şemasıyla yanıt ver, başka hiçbir metin ekleme:",
     JSON.stringify({
       overall: "number 0-100",
@@ -86,13 +91,14 @@ export async function analyzeContentAI(input: {
     url: input.url,
     title: input.title,
     meta_description: input.metaDescription,
+    ...(input.siteStats ? { site_geneli_agregat_bulgular: input.siteStats } : {}),
     page_text: text,
   });
 
   let raw = "";
   try {
     const msg = await client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 1600,
       temperature: 0.2,
       system,
@@ -160,4 +166,57 @@ export async function analyzeContentAI(input: {
     entities: Array.isArray(j.entities) ? j.entities.filter((x: any) => typeof x === "string").slice(0, 10) : [],
     missingEntities: Array.isArray(j.missingEntities) ? j.missingEntities.filter((x: any) => typeof x === "string").slice(0, 8) : [],
   };
+}
+
+// ── SEO Aksiyon Planı: deterministik bulguları TEK çağrıyla yorumla ─────────
+export interface SeoAction { title: string; why: string; priority: "yüksek" | "orta" | "düşük" }
+export interface SeoActionPlan { summary: string; actions: SeoAction[] }
+export async function analyzeSeoActionPlan(
+  input: { url: string; findings: string },
+  opts?: { model?: string }
+): Promise<SeoActionPlan | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  if (!input.findings || input.findings.trim().length < 10) return null;
+  const model = opts?.model || MODEL;
+  const client = new Anthropic({ apiKey });
+  const system = [
+    "Sen kıdemli bir teknik SEO danışmanısın.",
+    "Sana bir sitenin DETERMİNİSTİK denetim bulguları (gerçek, doğrulanmış sayılarla) verilecek.",
+    "Bu bulguları YORUMLA ve öncelikli, uygulanabilir bir aksiyon planı çıkar.",
+    "Yeni sayı, URL, istatistik, trafik veya sıralama verisi ÜRETME. Sadece verilen bulgulara dayan; bilmiyorsan uydurma.",
+    "Aynı kök nedene işaret eden bulguları grupla (ör. şablon/template kaynaklı toplu eksiklik). En fazla 7 aksiyon.",
+    "Her aksiyona öncelik ata: 'yüksek' | 'orta' | 'düşük'. Türkçe yaz.",
+    "SADECE şu JSON ile yanıt ver, başka hiçbir metin ekleme:",
+    JSON.stringify({ summary: "string (1-2 cümle genel durum)", actions: [{ title: "string", why: "string (neden önemli / hangi bulgudan)", priority: "yüksek|orta|düşük" }] }),
+  ].join("\n");
+  let raw = "";
+  try {
+    const msg = await client.messages.create({
+      model,
+      max_tokens: 1400,
+      temperature: 0.2,
+      system,
+      messages: [{ role: "user", content: input.findings.slice(0, 8000) }],
+    });
+    raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+  } catch { return null; }
+  let j: any;
+  try {
+    let s = raw.trim();
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/); if (fence) s = fence[1].trim();
+    const a = s.indexOf("{"); const b = s.lastIndexOf("}"); if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
+    j = JSON.parse(s);
+  } catch { return null; }
+  if (!j || typeof j.summary !== "string" || !Array.isArray(j.actions)) return null;
+  const actions: SeoAction[] = j.actions
+    .filter((x: any) => x && typeof x.title === "string")
+    .slice(0, 7)
+    .map((x: any) => ({
+      title: String(x.title).slice(0, 160),
+      why: typeof x.why === "string" ? x.why.slice(0, 240) : "",
+      priority: x.priority === "yüksek" || x.priority === "orta" || x.priority === "düşük" ? x.priority : "orta",
+    }));
+  if (!actions.length) return null;
+  return { summary: j.summary.slice(0, 400), actions };
 }

@@ -1,7 +1,7 @@
 "use server";
 import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
-import { analyzeContentAI, type AiAnalysis } from "@/lib/audit-ai";
+import { analyzeContentAI, analyzeSeoActionPlan, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
 // ─────────────────────────────────────────────────────────────────────────────
 // v2 MOTOR — Site geneli bulgular kategorilere dağıtıldı (Screaming Frog tarzı)
 // - Her kontrol etkilenen URL listesini taşır (URL_CAP ile sınırlı)
@@ -45,7 +45,7 @@ export interface AuditData {
   aiAccess?: { bot: string; allowed: boolean }[];
   llmsTxt?: boolean;
   redirectChain?: { url: string; status: number }[];
-  siteUrls?: string[]; // sayfa sayfa AI GEO taraması için taranan URL'ler
+  seoPlan?: SeoActionPlan | null; // AI ile deterministik bulgulardan öncelikli aksiyon planı
 }
 export type AuditResponse = { ok: true; data: AuditData } | { ok: false; error: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -864,9 +864,8 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   ]);
   if (!lh.ok) return { ok: false, error: lh.error };
   if (!page.ok) return { ok: false, error: "Sayfa HTML'i alınamadı (zaman aşımı veya engel)." };
-  // 2) AI + site tarama + görsel/link HEAD + redirect zinciri + robots + llms.txt paralel
-  const [ai, site, imagesList, linksRes, redirectChain, robotsRes, llmsTxt] = await Promise.all([
-    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text }).catch(() => null),
+  // 2) Site tarama + görsel/link HEAD + redirect zinciri + robots + llms.txt paralel (mekanik crawler)
+  const [site, imagesList, linksRes, redirectChain, robotsRes, llmsTxt] = await Promise.all([
     siteCrawl(page.origin, lh.finalUrl).catch(() => null),
     fetchImagesList(page.html, page.finalUrl).catch(() => [] as AuditData["imagesList"]),
     fetchLinksList(page.html, page.finalUrl, page.host).catch(() => ({ list: [], broken: [] as string[] })),
@@ -900,7 +899,15 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const groups = buildGroups(page, site, lh, { brokenLinks, redirectChain: redirectChainCheck, aiAccess: aiAccessCheck, llmsTxt: llmsTxtCheck });
   // Öneri metinlerini bağla (elle atanmamışsa)
   for (const g of groups) g.checks = g.checks.map((c) => ({ ...c, fix: c.fix ?? FIX[c.label] }));
-  // 4) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0
+  // 4) AI katmanı — mekanik bulgular TEK çağrıyla yorumlanır (site geneli), per-sayfa değil
+  const geoModel = process.env.ANTHROPIC_GEO_MODEL || undefined;
+  const siteStats = site ? buildSiteAgg(site.pages) : undefined;
+  const seoFindings = buildSeoFindings(groups);
+  const [ai, seoPlan] = await Promise.all([
+    analyzeContentAI({ url: lh.finalUrl, title: page.title ?? "", metaDescription: page.desc ?? "", pageText: page.text, siteStats }, { model: geoModel }).catch(() => null),
+    analyzeSeoActionPlan({ url: lh.finalUrl, findings: seoFindings }, { model: geoModel }).catch(() => null),
+  ]);
+  // 5) Sağlık skoru — info satırları hariç, pass=1 warn=0.5 fail=0
   const scorable = groups.flatMap((g) => g.checks).filter((c) => !c.info);
   const errors = scorable.filter((c) => c.status === "fail").length;
   const warnings = scorable.filter((c) => c.status === "warn").length;
@@ -929,39 +936,45 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       aiAccess,
       llmsTxt,
       redirectChain,
-      siteUrls: site ? site.pages.map((p) => p.url).slice(0, 500) : undefined,
+      seoPlan,
     },
   };
 }
 
-// ── Sayfa sayfa AI GEO taraması (kullanıcı tetikler; her sayfa gerçek Claude çağrısı) ──
-export interface PageGeoItem { url: string; overall: number | null; summary: string }
-export type PageGeoResponse =
-  | { ok: true; items: PageGeoItem[]; analyzed: number; requested: number }
-  | { ok: false; error: string };
-export async function analyzePagesGeo(urls: string[]): Promise<PageGeoResponse> {
-  const profile = await getProfile();
-  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
-  const PAGE_GEO_CAP = 40; // canlı istekte güvenli üst sınır (500 için arka plan işi gerekir)
-  const list = Array.from(new Set((urls || []).filter((u) => /^https?:\/\//i.test(u)))).slice(0, PAGE_GEO_CAP);
-  if (list.length === 0) return { ok: false, error: "Taranacak URL bulunamadı" };
-  const deadline = Date.now() + 200_000;
-  const items: PageGeoItem[] = [];
-  let idx = 0;
-  async function worker() {
-    while (idx < list.length && Date.now() < deadline) {
-      const u = list[idx++];
-      const r = await safeFetchText(u, 6000);
-      if (!r.ok) { items.push({ url: u, overall: null, summary: "Sayfa alınamadı (tespit edilemedi)" }); continue; }
-      const t = r.text;
-      const title = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim();
-      const desc = (t.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim();
-      const text = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      const ai = await analyzeContentAI({ url: u, title, metaDescription: desc, pageText: text }).catch(() => null);
-      items.push({ url: u, overall: ai?.overall ?? null, summary: ai?.summary ?? "AI analizi yapılamadı (tespit edilemedi)" });
+// ── Site geneli agregasyon: mekanik crawler bulgularını yüzdelerle özetle (Claude'a girdi) ──
+function buildSiteAgg(pages: PageInfo[]): string {
+  const N = pages.length;
+  const live = pages.filter((p) => p.status > 0 && p.status < 400);
+  const L = live.length || 1;
+  const pct = (n: number) => Math.round((100 * n) / L);
+  const avgWords = Math.round(live.reduce((a, p) => a + p.words, 0) / L);
+  return [
+    `Taranan sayfa sayısı: ${N} (erişilebilir: ${live.length})`,
+    `Tek H1 olan sayfa: %${pct(live.filter((p) => p.h1 === 1).length)}`,
+    `H1 hiç olmayan sayfa: %${pct(live.filter((p) => p.h1 === 0).length)}`,
+    `Meta açıklaması olan sayfa: %${pct(live.filter((p) => p.desc).length)}`,
+    `Başlığı (title) olan sayfa: %${pct(live.filter((p) => p.title).length)}`,
+    `JSON-LD yapısal verisi olan sayfa: %${pct(live.filter((p) => p.jsonld).length)}`,
+    `Organization şeması olan sayfa: %${pct(live.filter((p) => p.schemaOrg).length)}`,
+    `Breadcrumb şeması olan sayfa: %${pct(live.filter((p) => p.schemaBreadcrumb).length)}`,
+    `FAQ şeması olan sayfa: %${pct(live.filter((p) => p.schemaFaq).length)}`,
+    `Canonical etiketi olan sayfa: %${pct(live.filter((p) => p.canonical).length)}`,
+    `hreflang olan sayfa: %${pct(live.filter((p) => p.hreflang > 0).length)}`,
+    `Ortalama kelime sayısı: ${avgWords}`,
+    `200 kelimeden az (zayıf) içerikli sayfa: %${pct(live.filter((p) => p.words < 200).length)}`,
+    `noindex olan sayfa: %${pct(live.filter((p) => p.noindex).length)}`,
+  ].join("\n");
+}
+
+// ── Deterministik denetim bulgularını AI aksiyon planı için metne çevir ──
+function buildSeoFindings(groups: CheckGroup[]): string {
+  const lines: string[] = [];
+  for (const g of groups) {
+    for (const c of g.checks) {
+      if (c.info || c.status === "pass") continue;
+      const n = c.urls?.length;
+      lines.push(`[${g.title.split(" · ")[0]}] ${c.label}: ${c.detail}${n ? ` (${n} sayfa)` : ""} [${c.status === "fail" ? "HATA" : "UYARI"}]`);
     }
   }
-  await Promise.all(Array.from({ length: 6 }, worker));
-  items.sort((a, b) => (a.overall ?? 101) - (b.overall ?? 101)); // en düşük skor (önce düzeltilecek) üstte
-  return { ok: true, items, analyzed: items.length, requested: (urls || []).length };
+  return lines.join("\n");
 }

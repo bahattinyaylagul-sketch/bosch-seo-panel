@@ -45,6 +45,7 @@ export interface AuditData {
   aiAccess?: { bot: string; allowed: boolean }[];
   llmsTxt?: boolean;
   redirectChain?: { url: string; status: number }[];
+  siteUrls?: string[]; // sayfa sayfa AI GEO taraması için taranan URL'ler
 }
 export type AuditResponse = { ok: true; data: AuditData } | { ok: false; error: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -928,6 +929,39 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
       aiAccess,
       llmsTxt,
       redirectChain,
+      siteUrls: site ? site.pages.map((p) => p.url).slice(0, 500) : undefined,
     },
   };
+}
+
+// ── Sayfa sayfa AI GEO taraması (kullanıcı tetikler; her sayfa gerçek Claude çağrısı) ──
+export interface PageGeoItem { url: string; overall: number | null; summary: string }
+export type PageGeoResponse =
+  | { ok: true; items: PageGeoItem[]; analyzed: number; requested: number }
+  | { ok: false; error: string };
+export async function analyzePagesGeo(urls: string[]): Promise<PageGeoResponse> {
+  const profile = await getProfile();
+  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+  const PAGE_GEO_CAP = 40; // canlı istekte güvenli üst sınır (500 için arka plan işi gerekir)
+  const list = Array.from(new Set((urls || []).filter((u) => /^https?:\/\//i.test(u)))).slice(0, PAGE_GEO_CAP);
+  if (list.length === 0) return { ok: false, error: "Taranacak URL bulunamadı" };
+  const deadline = Date.now() + 200_000;
+  const items: PageGeoItem[] = [];
+  let idx = 0;
+  async function worker() {
+    while (idx < list.length && Date.now() < deadline) {
+      const u = list[idx++];
+      const r = await safeFetchText(u, 6000);
+      if (!r.ok) { items.push({ url: u, overall: null, summary: "Sayfa alınamadı (tespit edilemedi)" }); continue; }
+      const t = r.text;
+      const title = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim();
+      const desc = (t.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim();
+      const text = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const ai = await analyzeContentAI({ url: u, title, metaDescription: desc, pageText: text }).catch(() => null);
+      items.push({ url: u, overall: ai?.overall ?? null, summary: ai?.summary ?? "AI analizi yapılamadı (tespit edilemedi)" });
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, worker));
+  items.sort((a, b) => (a.overall ?? 101) - (b.overall ?? 101)); // en düşük skor (önce düzeltilecek) üstte
+  return { ok: true, items, analyzed: items.length, requested: (urls || []).length };
 }

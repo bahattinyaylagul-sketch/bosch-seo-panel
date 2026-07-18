@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition } from "react";
-import { auditSite, type AuditData, type Check, type CheckGroup, type CheckStatus } from "./actions";
+import { auditSite, analyzePagesGeo, type AuditData, type Check, type CheckGroup, type CheckStatus, type PageGeoItem } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { useT } from "@/components/LangProvider";
 
@@ -368,6 +368,61 @@ function PerfBlock({ data }: { data: AuditData }) {
   );
 }
 
+// ── Sayfa sayfa AI GEO taraması ────────────────────────────────────────────
+function PageGeoScan({ urls }: { urls: string[] }) {
+  const [items, setItems] = useState<PageGeoItem[] | null>(null);
+  const [info, setInfo] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  function run() {
+    setErr(null); setItems(null);
+    start(async () => {
+      try {
+        const r = await analyzePagesGeo(urls);
+        if (r.ok) { setItems(r.items); setInfo(`${r.analyzed} sayfa AI ile skorlandı${r.requested > r.analyzed ? ` · toplam ${r.requested} URL'den örneklem` : ""}`); }
+        else setErr(r.error);
+      } catch (e) { setErr(e instanceof Error ? e.message : "Hata"); }
+    });
+  }
+  const short = (s: string) => { try { const u = new URL(s); return u.pathname || u.host; } catch { return s; } };
+  return (
+    <div className="mt-8">
+      <div className="flex items-center gap-2 mb-1">
+        <h2 className="text-base font-semibold text-ink">Sayfa sayfa AI GEO taraması</h2>
+        <span className="rounded-bosch bg-bosch-blue/10 text-bosch-blue text-[11px] px-2 py-0.5 font-medium">Claude ile</span>
+      </div>
+      <p className="text-xs text-ink-body mb-3">
+        Her sayfayı ayrı ayrı Claude ile skorlar; en düşük skorlu (önce düzeltilmesi gereken) sayfaları üste sıralar. Canlı istekte örneklem ~40 sayfa (tam site için arka plan işi gerekir).
+      </p>
+      {!items && (
+        <button onClick={run} disabled={pending} className="rounded-bosch bg-bosch-red px-4 py-2 text-sm font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60">
+          {pending ? "Sayfalar AI ile skorlanıyor… (1-2 dk)" : "AI GEO taramasını başlat"}
+        </button>
+      )}
+      {err && <p className="mt-2 text-sm text-bosch-red">{err}</p>}
+      {items && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-ink-body">{info}</span>
+            <button onClick={run} disabled={pending} className="text-xs text-bosch-blue hover:underline disabled:opacity-60">{pending ? "…" : "Tekrar tara"}</button>
+          </div>
+          <div className="border border-surface-border rounded-bosch overflow-hidden">
+            {items.map((it, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-2.5 border-t border-surface-border first:border-t-0">
+                {it.overall == null ? <span className="h-9 w-9 shrink-0 rounded-full border border-surface-border flex items-center justify-center text-[10px] text-ink-body">—</span> : <Ring value={it.overall} size={40} stroke={4} />}
+                <div className="min-w-0 flex-1">
+                  <a href={it.url} target="_blank" rel="noopener noreferrer" className="text-xs text-bosch-blue hover:underline break-all">{short(it.url)}</a>
+                  <p className="text-xs text-ink-body break-words line-clamp-2">{it.summary}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuditTool() {
   const t = useT();
   const [url, setUrl] = useState("");
@@ -575,6 +630,9 @@ export default function AuditTool() {
               )}
             </div>
           )}
+
+          {/* ── Sayfa sayfa AI GEO taraması ── */}
+          {filter === "all" && res.siteUrls && res.siteUrls.length > 1 && <PageGeoScan urls={res.siteUrls} />}
         </div>
       )}
     </div>

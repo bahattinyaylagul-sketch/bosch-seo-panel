@@ -452,12 +452,29 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
     const root = await safeFetchText(sitemapUrl, 9000);
     if (!root.ok) return null;
 
-    // sitemap index ise alt-sitemap'leri gez (limit dolana kadar)
+    // kapsam: girilen URL'nin ilk yol segmenti (örn. /tr) — sadece o dil/ülke
+    let prefix = "";
+    let country = "";
+    try {
+      const seg = new URL(scopeUrl).pathname.split("/").filter(Boolean)[0];
+      if (seg) { prefix = "/" + seg; country = seg; }
+    } catch {}
+    const inScope = (u: string) => {
+      if (!prefix) return true;
+      try { const p = new URL(u).pathname; return p === prefix || p.startsWith(prefix + "/"); } catch { return false; }
+    };
+
+    // sitemap index ise alt-sitemap'leri gez — kapsamdaki (örn. TR) alt-sitemap'leri öne al
     let urls: string[] = [];
     if (/<sitemapindex/i.test(root.text)) {
-      const children = extractLocs(root.text).slice(0, 30);
+      let children = extractLocs(root.text);
+      if (country) {
+        const rx = new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i");
+        children = [...children.filter((c) => rx.test(c)), ...children.filter((c) => !rx.test(c))];
+      }
+      children = children.slice(0, 40);
       for (const child of children) {
-        if (urls.length >= CRAWL_LIMIT) break;
+        if (urls.filter(inScope).length >= CRAWL_LIMIT) break;
         const sub = await safeFetchText(child, 8000);
         if (sub.ok) urls.push(...extractLocs(sub.text));
       }
@@ -465,18 +482,8 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
       urls = extractLocs(root.text);
     }
 
-    // girilen URL'nin ilk yol segmentine (örn. /tr) daralt — TR tarafı
-    let prefix = "";
-    try {
-      const seg = new URL(scopeUrl).pathname.split("/").filter(Boolean)[0];
-      if (seg) prefix = "/" + seg;
-    } catch {}
-    if (prefix) {
-      const scoped = urls.filter((u) => { try { return new URL(u).pathname.startsWith(prefix); } catch { return false; } });
-      if (scoped.length >= 2) urls = scoped;
-    }
-
-    urls = Array.from(new Set(urls)).slice(0, CRAWL_LIMIT);
+    // KATI kapsam filtresi: yalnızca girilen dil/ülke (örn. /tr) sayfaları
+    urls = Array.from(new Set(urls.filter(inScope))).slice(0, CRAWL_LIMIT);
     const totalFound = urls.length;
     if (totalFound < 2) return null;
 

@@ -809,25 +809,42 @@ export default function AuditTool() {
                 <Ring value={res.ai.overall} size={96} stroke={9} />
                 <div><div className="text-base font-semibold text-ink mb-0.5">Genel AI/GEO skoru</div><p className="text-xs text-ink-body leading-relaxed">{res.ai.summary}</p></div>
               </div>
-              {/* Kategori özet dashboard'u */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                {[
-                  { label: "İçerik & Semantik", dims: res.ai.contentQuality },
-                  { label: "E-E-A-T", dims: res.ai.eeat },
-                  { label: "AI Görünürlüğü", dims: res.ai.aiVisibility },
-                  { label: "GEO", dims: res.ai.geo },
-                ].map((c) => {
-                  const avg = Math.round(c.dims.reduce((s, d) => s + d.score, 0) / (c.dims.length || 1));
-                  const weak = c.dims.filter((d) => d.score < 60).length;
-                  return (
-                    <div key={c.label} className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center text-center min-h-[132px]">
-                      <Ring value={avg} size={64} stroke={7} />
-                      <div className="text-xs font-semibold text-ink mt-2">{c.label}</div>
-                      <div className="text-[11px] mt-0.5" style={{ color: weak > 0 ? RED : GREEN }}>{weak > 0 ? `${weak} boyut zayıf` : "tümü iyi ✓"}</div>
+              {/* Öncelik — en zayıf boyutlar */}
+              {(() => {
+                const tagged = [
+                  ...res.ai.contentQuality.map((d) => ({ ...d, cat: "İçerik & Semantik" })),
+                  ...res.ai.eeat.map((d) => ({ ...d, cat: "E-E-A-T" })),
+                  ...res.ai.aiVisibility.map((d) => ({ ...d, cat: "AI Görünürlüğü" })),
+                  ...res.ai.geo.map((d) => ({ ...d, cat: "GEO" })),
+                ].sort((a, b) => a.score - b.score).slice(0, 5);
+                const barCol = (s: number) => (s < 40 ? RED : s < 60 ? AMBER : GREEN);
+                return (
+                  <div className="border border-surface-border rounded-bosch p-5 mb-4">
+                    <div className="text-sm font-semibold text-ink mb-1">Öncelik — en zayıf boyutlar</div>
+                    <p className="text-[11px] text-ink-body mb-4">En düşük skorlu 5 boyut; önce bunları iyileştir.</p>
+                    <div className="space-y-4">
+                      {tagged.map((d, i) => {
+                        const col = barCol(d.score);
+                        return (
+                          <div key={i}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-44 shrink-0">
+                                <div className="text-xs font-medium text-ink truncate">{d.label}</div>
+                                <div className="text-[10px] text-ink-body">{d.cat}</div>
+                              </div>
+                              <div className="flex-1 h-2.5 rounded-bosch bg-surface-muted overflow-hidden">
+                                <div className="h-full rounded-bosch" style={{ width: `${Math.max(3, d.score)}%`, background: col }} />
+                              </div>
+                              <div className="w-9 text-right text-sm font-semibold tabular-nums" style={{ color: col }}>{d.score}</div>
+                            </div>
+                            {d.note && <p className="text-[11px] text-ink-body mt-1 ml-0 sm:ml-[188px] leading-relaxed">{d.note}</p>}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                 <AiSection title="İçerik Kalitesi & Semantik SEO" dims={res.ai.contentQuality} />
                 <AiSection title="E-E-A-T (Otorite & Güven)" dims={res.ai.eeat} />

@@ -277,6 +277,7 @@ interface PageInfo {
   title: string | null; desc: string | null; titleLen: number; descLen: number;
   h1: number; jsonld: boolean; canonical: boolean; noindex: boolean;
   imgTotal: number; imgNoAlt: number; words: number; hreflang: number; viewport: boolean;
+  schemaOrg: boolean; schemaProduct: boolean; schemaBreadcrumb: boolean; schemaFaq: boolean;
 }
 interface SiteCrawlResult { pages: PageInfo[]; totalFound: number; prefix: string; partial: boolean }
 async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlResult | null> {
@@ -337,7 +338,7 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const r = await safeFetchText(u, 5000);
         // Erişilemeyen (4xx/5xx/timeout) sayfaları da kaydet — bunlar da bulgu
         if (!r.ok) {
-          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false });
+          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false, schemaOrg: false, schemaProduct: false, schemaBreadcrumb: false, schemaFaq: false });
           continue;
         }
         const t = r.text;
@@ -353,9 +354,13 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const imgNoAlt = (t.match(/<img(?![^>]*\balt=)[^>]*>/gi) || []).length;
         const hreflang = (t.match(/hreflang=["'][^"']+["']/gi) || []).length;
         const viewport = /<meta[^>]+name=["']viewport["']/i.test(t);
+        const schemaOrg = /"@type"\s*:\s*"?[^"]*(Organization|LocalBusiness)/i.test(t);
+        const schemaProduct = /"@type"\s*:\s*"?[^"]*(Product|Offer)/i.test(t);
+        const schemaBreadcrumb = /"@type"\s*:\s*"?[^"]*Breadcrumb/i.test(t);
+        const schemaFaq = /"@type"\s*:\s*"?[^"]*(FAQPage|QAPage|Question)/i.test(t);
         const body = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
         const words = body ? body.split(" ").length : 0;
-        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport });
+        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport, schemaOrg, schemaProduct, schemaBreadcrumb, schemaFaq });
       }
     }
     await Promise.all(Array.from({ length: CRAWL_POOL }, worker));
@@ -761,22 +766,34 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
       ? { label: "Yapısal veri (JSON-LD)", status: "pass", detail: `${ldBlocks.length} blok${typeList.length ? " — " + typeList.slice(0, 6).join(", ") : ""}` }
       : { label: "Yapısal veri (JSON-LD)", status: "fail", detail: "Ham HTML'de Schema.org verisi yok — AI motorları içeriği zor anlar" });
   }
-  const hasOrg = typeList.some((t) => /organization/i.test(t));
-  geo.push(hasOrg
-    ? { label: "Kurum şeması (Organization)", status: "pass", detail: "Marka/kurum kimliği tanımlı" }
-    : { label: "Kurum şeması (Organization)", status: "warn", detail: "Organization şeması yok — varlık (entity) sinyali zayıf" });
-  const hasProduct = typeList.some((t) => /product|offer/i.test(t));
-  geo.push(hasProduct
-    ? { label: "Ürün şeması (Product/Offer)", status: "pass", detail: "Ürün verisi zengin sonuç için hazır" }
-    : { label: "Ürün şeması (Product/Offer)", status: "warn", detail: "Ürün şeması yok (ürün sayfaları için önerilir)" });
-  const hasBreadcrumb = typeList.some((t) => /breadcrumb/i.test(t));
-  geo.push(hasBreadcrumb
-    ? { label: "Breadcrumb şeması", status: "pass", detail: "Gezinme yolu tanımlı" }
-    : { label: "Breadcrumb şeması", status: "warn", detail: "BreadcrumbList yok" });
-  const hasFaq = typeList.some((t) => /faq|qapage|question/i.test(t));
-  geo.push(hasFaq
-    ? { label: "SSS / Soru-Cevap şeması", status: "pass", detail: "AI motorlarının doğrudan alıntılayacağı Q&A var" }
-    : { label: "SSS / Soru-Cevap şeması", status: "warn", detail: "FAQ/QAPage yok — AI cevaplarında öne çıkmayı zorlaştırır" });
+  if (sitewide) {
+    const liveP = (p: PageInfo) => p.status > 0 && p.status < 400;
+    geo.push(siteCheck("Kurum şeması (Organization)", of((p) => liveP(p) && !p.schemaOrg), Math.floor(N / 2),
+      "Sayfalarda Organization şeması var", (n) => `${n} sayfada Organization şeması yok`, FIX["Kurum şeması (Organization)"]!));
+    geo.push(siteCheck("Ürün şeması (Product/Offer)", of((p) => liveP(p) && !p.schemaProduct), Math.floor(N * 0.8),
+      "Ürün şeması yaygın", (n) => `${n} sayfada Product/Offer şeması yok`, FIX["Ürün şeması (Product/Offer)"]!));
+    geo.push(siteCheck("Breadcrumb şeması", of((p) => liveP(p) && !p.schemaBreadcrumb), Math.floor(N / 2),
+      "Breadcrumb şeması tanımlı", (n) => `${n} sayfada BreadcrumbList yok`, FIX["Breadcrumb şeması"]!));
+    geo.push(siteCheck("SSS / Soru-Cevap şeması", of((p) => liveP(p) && !p.schemaFaq), Math.floor(N * 0.8),
+      "FAQ şeması mevcut", (n) => `${n} sayfada FAQ/QAPage yok`, FIX["SSS / Soru-Cevap şeması"]!));
+  } else {
+    const hasOrg = typeList.some((t) => /organization/i.test(t));
+    geo.push(hasOrg
+      ? { label: "Kurum şeması (Organization)", status: "pass", detail: "Marka/kurum kimliği tanımlı" }
+      : { label: "Kurum şeması (Organization)", status: "warn", detail: "Organization şeması yok — varlık (entity) sinyali zayıf" });
+    const hasProduct = typeList.some((t) => /product|offer/i.test(t));
+    geo.push(hasProduct
+      ? { label: "Ürün şeması (Product/Offer)", status: "pass", detail: "Ürün verisi zengin sonuç için hazır" }
+      : { label: "Ürün şeması (Product/Offer)", status: "warn", detail: "Ürün şeması yok (ürün sayfaları için önerilir)" });
+    const hasBreadcrumb = typeList.some((t) => /breadcrumb/i.test(t));
+    geo.push(hasBreadcrumb
+      ? { label: "Breadcrumb şeması", status: "pass", detail: "Gezinme yolu tanımlı" }
+      : { label: "Breadcrumb şeması", status: "warn", detail: "BreadcrumbList yok" });
+    const hasFaq = typeList.some((t) => /faq|qapage|question/i.test(t));
+    geo.push(hasFaq
+      ? { label: "SSS / Soru-Cevap şeması", status: "pass", detail: "AI motorlarının doğrudan alıntılayacağı Q&A var" }
+      : { label: "SSS / Soru-Cevap şeması", status: "warn", detail: "FAQ/QAPage yok — AI cevaplarında öne çıkmayı zorlaştırır" });
+  }
   const ogTitle = has(/property=["']og:title["']/i), ogImage = has(/property=["']og:image["']/i), ogDesc = has(/property=["']og:description["']/i);
   const ogCount = [ogTitle, ogImage, ogDesc].filter(Boolean).length;
   geo.push(ogCount === 3

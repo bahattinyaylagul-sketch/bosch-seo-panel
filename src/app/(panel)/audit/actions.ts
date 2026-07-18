@@ -445,11 +445,11 @@ async function crawl(inputUrl: string): Promise<CrawlResult> {
 
   return {
     groups: [
-      { id: "tech", title: "Teknik SEO & Taranabilirlik", checks: tech },
-      { id: "onpage", title: "Sayfa İçi SEO", checks: onpage },
-      { id: "images", title: "Görseller", checks: images },
-      { id: "mobile", title: "Mobil Uyumluluk", checks: mobile },
-      { id: "geo", title: "GEO / Yapısal Veri (AI motorları)", checks: geo },
+      { id: "tech", title: "Teknik SEO & Taranabilirlik · girilen sayfa", checks: tech },
+      { id: "onpage", title: "Sayfa İçi SEO · girilen sayfa", checks: onpage },
+      { id: "images", title: "Görseller · girilen sayfa", checks: images },
+      { id: "mobile", title: "Mobil Uyumluluk · girilen sayfa", checks: mobile },
+      { id: "geo", title: "GEO / Yapısal Veri · girilen sayfa", checks: geo },
     ],
     pageText: text,
     title: title ?? "",
@@ -626,7 +626,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
     { label: "Performans skoru (Lighthouse)", status: scoreToStatus(lh.perfScore), detail: lh.perfScore == null ? "—" : `${Math.round(lh.perfScore * 100)} / 100` },
     ...lh.metrics.map((m) => ({ label: m.key, status: m.status, detail: m.value })),
   ];
-  const groups: CheckGroup[] = [...crawlRes.groups, { id: "perf", title: "Performans (hız)", checks: perfChecks }];
+  const groups: CheckGroup[] = [...crawlRes.groups, { id: "perf", title: "Performans (hız) · girilen sayfa", checks: perfChecks }];
   if (siteGroup) groups.push(siteGroup);
 
   // Her kontrole "öneri / nasıl düzeltilir" metnini bağla

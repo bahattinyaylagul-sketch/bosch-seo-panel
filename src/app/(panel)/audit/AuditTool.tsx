@@ -66,13 +66,26 @@ function CheckRow({ c }: { c: Check }) {
         <span className="text-ink-body/50 text-xs w-4 text-center">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
-        <div className="px-4 pb-3 pl-9">
+        <div className="px-4 pb-3 pl-9 space-y-2">
           {c.status === "pass" ? (
             <p className="text-xs text-ink-body bg-surface-muted rounded-bosch px-3 py-2">Bu kontrol başarılı — aksiyon gerekmiyor.</p>
           ) : (
             <div className="text-xs bg-surface-muted rounded-bosch px-3 py-2 border-l-2" style={{ borderColor: c.status === "fail" ? RED : AMBER }}>
               <span className="font-medium text-ink">Öneri: </span>
               <span className="text-ink-body">{c.fix ?? "Bu alanı iyileştirin."}</span>
+            </div>
+          )}
+          {c.urls && c.urls.length > 0 && (
+            <div>
+              <div className="text-[11px] font-medium text-ink-body mb-1">Etkilenen sayfalar ({c.urls.length}):</div>
+              <div className="border border-surface-border rounded-bosch divide-y divide-surface-border max-h-56 overflow-auto">
+                {c.urls.slice(0, 40).map((u, i) => (
+                  <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block px-3 py-1.5 text-xs text-bosch-blue hover:bg-surface-muted break-all">
+                    {u}
+                  </a>
+                ))}
+                {c.urls.length > 40 && <div className="px-3 py-1.5 text-xs text-ink-body">+{c.urls.length - 40} sayfa daha</div>}
+              </div>
             </div>
           )}
         </div>
@@ -162,6 +175,23 @@ export default function AuditTool() {
 
   const toggle = (f: Filter) => setFilter((cur) => (cur === f ? "all" : f));
 
+  function exportCsv(data: AuditData) {
+    const statusTr: Record<CheckStatus, string> = { fail: "Hata", warn: "Uyarı", pass: "OK" };
+    const rows: string[][] = [["Kategori", "Kontrol", "Durum", "Detay", "Öneri", "Etkilenen sayfalar"]];
+    data.groups.forEach((g) =>
+      g.checks
+        .filter((c) => c.status !== "pass")
+        .forEach((c) => rows.push([g.title, c.label, statusTr[c.status], c.detail, c.fix ?? "", (c.urls ?? []).join(" | ")]))
+    );
+    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "site-denetimi.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   return (
     <div>
       <form onSubmit={run} className="flex flex-col sm:flex-row gap-3 mb-2">
@@ -185,7 +215,15 @@ export default function AuditTool() {
 
       {res && (
         <div>
-          <p className="text-xs text-ink-body mb-4 break-all">{res.finalUrl}</p>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <p className="text-xs text-ink-body break-all">{res.finalUrl}</p>
+            <button
+              onClick={() => exportCsv(res)}
+              className="shrink-0 rounded-bosch border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted transition-colors whitespace-nowrap"
+            >
+              ⬇ Hataları dışa aktar (CSV)
+            </button>
+          </div>
 
           {/* Sağlık skoru hero */}
           <div className="border border-surface-border rounded-bosch p-5 mb-6 flex flex-col sm:flex-row items-center gap-6">
@@ -194,7 +232,14 @@ export default function AuditTool() {
               <div className="text-base font-semibold text-ink mb-1">Site sağlık skoru</div>
               <p className="text-xs text-ink-body mb-4">
                 {res.groups.reduce((n, g) => n + g.checks.length, 0)} kontrol · hız, teknik SEO, sayfa içi SEO ve GEO sinyalleri.
-                {filter !== "all" && <span className="text-bosch-blue"> · Filtre etkin, temizlemek için çipe tekrar tıklayın.</span>}
+                {filter !== "all" && (
+                  <>
+                    {" "}·{" "}
+                    <button onClick={() => setFilter("all")} className="text-bosch-blue underline font-medium">
+                      Tümünü göster
+                    </button>
+                  </>
+                )}
               </p>
               <div className="grid grid-cols-3 gap-3">
                 <StatChip label="Hata" value={res.counts.errors} hex={RED} active={filter === "fail"} onClick={() => toggle("fail")} />
@@ -206,7 +251,7 @@ export default function AuditTool() {
 
           {/* Core Web Vitals + hız fırsatları */}
           {filter === "all" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
               <div className="border border-surface-border rounded-bosch overflow-hidden">
                 <div className="px-4 py-2.5 bg-surface-muted text-sm font-semibold text-ink border-b border-surface-border flex items-center gap-3">
                   {res.perfScore !== null && <Ring value={Math.round(res.perfScore * 100)} size={40} stroke={4} />}

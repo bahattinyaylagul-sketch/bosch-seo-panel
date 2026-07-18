@@ -9,6 +9,7 @@ export interface Check {
   status: CheckStatus;
   detail: string;
   fix?: string;
+  urls?: string[]; // etkilenen sayfalar (site geneli taramada)
 }
 
 // Kontrol başlığına göre "öneri / nasıl düzeltilir" metni (satır açılınca gösterilir)
@@ -83,6 +84,30 @@ function scoreToStatus(s: number | null | undefined): CheckStatus {
   return s >= 0.9 ? "pass" : s >= 0.5 ? "warn" : "fail";
 }
 
+// Lighthouse "opportunity" audit id → Türkçe başlık
+const OPP_TR: Record<string, string> = {
+  "unused-javascript": "Kullanılmayan JavaScript'i azalt",
+  "unused-css-rules": "Kullanılmayan CSS'i azalt",
+  "render-blocking-resources": "Render engelleyen kaynakları kaldır",
+  "unminified-javascript": "JavaScript'i küçült (minify)",
+  "unminified-css": "CSS'i küçült (minify)",
+  "modern-image-formats": "Görselleri modern formatta sun (WebP/AVIF)",
+  "uses-webp-images": "Görselleri modern formatta sun (WebP/AVIF)",
+  "uses-optimized-images": "Görselleri optimize et (sıkıştır)",
+  "uses-responsive-images": "Uygun boyutlu görsel sun",
+  "offscreen-images": "Ekran dışı görselleri ertele (lazy load)",
+  "uses-text-compression": "Metin sıkıştırmayı etkinleştir (gzip/brotli)",
+  "server-response-time": "Sunucu yanıt süresini kısalt (TTFB)",
+  "redirects": "Gereksiz yönlendirmeleri azalt",
+  "uses-long-cache-ttl": "Statik varlıklara uzun önbellek süresi ver",
+  "total-byte-weight": "Toplam sayfa boyutunu azalt",
+  "dom-size": "DOM boyutunu küçült",
+  "duplicated-javascript": "Yinelenen JavaScript'i kaldır",
+  "legacy-javascript": "Eski (legacy) JavaScript'i kaldır",
+  "prioritize-lcp-image": "LCP görselini önceliklendir",
+  "efficient-animated-content": "Animasyonlu içeriği video olarak sun",
+};
+
 // ── Lighthouse (PageSpeed) ─────────────────────────────────────────────────
 type LhOk = {
   ok: true;
@@ -125,11 +150,16 @@ async function fetchLighthouse(url: string): Promise<LhOk | { ok: false; error: 
         { key: "TBT", ...cell("total-blocking-time") },
         { key: "Speed Index", ...cell("speed-index") },
       ];
-      const opportunities = Object.values<any>(A)
-        .filter((a) => a?.details?.type === "opportunity" && (a.details.overallSavingsMs ?? 0) > 100)
-        .sort((x, y) => (y.details.overallSavingsMs ?? 0) - (x.details.overallSavingsMs ?? 0))
+      const opportunities = Object.entries<any>(A)
+        .filter(([, a]) => a?.details?.type === "opportunity" && ((a.details.overallSavingsMs ?? 0) > 100 || (a.details.overallSavingsBytes ?? 0) > 10240))
+        .sort(([, x], [, y]) => (y.details.overallSavingsMs ?? 0) - (x.details.overallSavingsMs ?? 0))
         .slice(0, 8)
-        .map((a) => ({ title: a.title as string, value: (a.displayValue as string) || `${Math.round(a.details.overallSavingsMs)} ms` }));
+        .map(([id, a]) => {
+          const kb = a.details.overallSavingsBytes ? Math.round(a.details.overallSavingsBytes / 1024) : null;
+          const ms = a.details.overallSavingsMs ? Math.round(a.details.overallSavingsMs) : null;
+          const value = kb ? `~${kb} KB tasarruf` : ms ? `~${ms} ms tasarruf` : "";
+          return { title: OPP_TR[id] ?? (a.title as string), value };
+        });
 
       return { ok: true, finalUrl: lr.finalUrl ?? url, perfScore: lr.categories?.performance?.score ?? null, metrics, opportunities };
     } catch (e) {
@@ -406,45 +436,64 @@ async function crawl(inputUrl: string): Promise<CrawlResult> {
   };
 }
 
-// ── Sınırlı site crawl: sitemap örnekleminden site-geneli sinyaller ────────
-async function siteCrawl(origin: string): Promise<CheckGroup | null> {
+// ── Site geneli tarayıcı: sitemap'ten 1500 URL'e kadar ─────────────────────
+const CRAWL_LIMIT = 1500;
+async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup | null> {
   if (!origin) return null;
   try {
-    // sitemap bul
+    const extractLocs = (xml: string) =>
+      Array.from(xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)).map((m) => m[1].trim()).filter((u) => /^https?:\/\//i.test(u));
+
+    // sitemap konumu (robots.txt → yoksa /sitemap.xml)
     let sitemapUrl = origin + "/sitemap.xml";
     const robots = await safeFetchText(origin + "/robots.txt", 6000);
     const sm = robots.text.match(/sitemap:\s*(\S+)/i);
     if (sm) sitemapUrl = sm[1].trim();
-    const smRes = await safeFetchText(sitemapUrl, 8000);
-    if (!smRes.ok) return null;
+    const root = await safeFetchText(sitemapUrl, 9000);
+    if (!root.ok) return null;
 
-    // sitemap index ise ilk alt-sitemap'i aç
-    let xml = smRes.text;
-    if (/<sitemapindex/i.test(xml)) {
-      const first = xml.match(/<loc>\s*([^<]+?)\s*<\/loc>/i);
-      if (first) {
-        const sub = await safeFetchText(first[1].trim(), 8000);
-        if (sub.ok) xml = sub.text;
+    // sitemap index ise alt-sitemap'leri gez (limit dolana kadar)
+    let urls: string[] = [];
+    if (/<sitemapindex/i.test(root.text)) {
+      const children = extractLocs(root.text).slice(0, 30);
+      for (const child of children) {
+        if (urls.length >= CRAWL_LIMIT) break;
+        const sub = await safeFetchText(child, 8000);
+        if (sub.ok) urls.push(...extractLocs(sub.text));
       }
+    } else {
+      urls = extractLocs(root.text);
     }
-    const urls = Array.from(xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi))
-      .map((m) => m[1].trim())
-      .filter((u) => /^https?:\/\//i.test(u))
-      .slice(0, 25);
-    if (urls.length < 2) return null;
 
-    // örneklem sayfaları çek (eşzamanlı, sınırlı)
-    const pages: { url: string; title: string | null; desc: string | null }[] = [];
-    const pool = 6;
+    // girilen URL'nin ilk yol segmentine (örn. /tr) daralt — TR tarafı
+    let prefix = "";
+    try {
+      const seg = new URL(scopeUrl).pathname.split("/").filter(Boolean)[0];
+      if (seg) prefix = "/" + seg;
+    } catch {}
+    if (prefix) {
+      const scoped = urls.filter((u) => { try { return new URL(u).pathname.startsWith(prefix); } catch { return false; } });
+      if (scoped.length >= 2) urls = scoped;
+    }
+
+    urls = Array.from(new Set(urls)).slice(0, CRAWL_LIMIT);
+    const totalFound = urls.length;
+    if (totalFound < 2) return null;
+
+    // tarama: eşzamanlı havuz + süre bütçesi (patlamayı önler)
+    const pages: { url: string; title: string | null; desc: string | null; h1: boolean }[] = [];
+    const deadline = Date.now() + 180000;
+    const pool = 20;
     let idx = 0;
     async function worker() {
-      while (idx < urls.length) {
+      while (idx < urls.length && Date.now() < deadline) {
         const u = urls[idx++];
-        const r = await safeFetchText(u, 6000);
+        const r = await safeFetchText(u, 5000);
         if (r.ok) {
           const title = (r.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim() || null;
           const desc = (r.text.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? "").trim() || null;
-          pages.push({ url: u, title, desc });
+          const h1 = /<h1[\s>]/i.test(r.text);
+          pages.push({ url: u, title, desc, h1 });
         }
       }
     }
@@ -452,32 +501,46 @@ async function siteCrawl(origin: string): Promise<CheckGroup | null> {
     if (pages.length < 2) return null;
 
     const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
-    const dup = (key: "title" | "desc") => {
-      const map = new Map<string, number>();
-      pages.forEach((p) => { const v = norm(p[key]); if (v) map.set(v, (map.get(v) ?? 0) + 1); });
-      return Array.from(map.values()).filter((n) => n > 1).reduce((a, n) => a + n, 0);
+    const dupUrls = (key: "title" | "desc") => {
+      const map = new Map<string, string[]>();
+      pages.forEach((p) => {
+        const v = norm(p[key]);
+        if (!v) return;
+        if (!map.has(v)) map.set(v, []);
+        map.get(v)!.push(p.url);
+      });
+      const out: string[] = [];
+      map.forEach((list) => { if (list.length > 1) out.push(...list); });
+      return out;
     };
-    const dupTitles = dup("title");
-    const dupDescs = dup("desc");
-    const missTitle = pages.filter((p) => !p.title).length;
-    const missDesc = pages.filter((p) => !p.desc).length;
+    const dupTitleUrls = dupUrls("title");
+    const dupDescUrls = dupUrls("desc");
+    const missTitleUrls = pages.filter((p) => !p.title).map((p) => p.url);
+    const missDescUrls = pages.filter((p) => !p.desc).map((p) => p.url);
+    const missH1Urls = pages.filter((p) => !p.h1).map((p) => p.url);
+
+    const scopeNote = prefix ? ` · kapsam: ${prefix}` : "";
+    const partial = pages.length < totalFound ? ` (süre limitinden ${totalFound} URL'nin ${pages.length}'i)` : "";
 
     const checks: Check[] = [
-      { label: "Taranan sayfa (örneklem)", status: "pass", detail: `${pages.length} sayfa (sitemap'ten)` },
-      dupTitles === 0
+      { label: "Taranan sayfalar", status: "pass", detail: `${pages.length} sayfa tarandı${partial}${scopeNote} · limit ${CRAWL_LIMIT}`, urls: pages.map((p) => p.url) },
+      dupTitleUrls.length === 0
         ? { label: "Yinelenen başlıklar (title)", status: "pass", detail: "Tekrarlayan başlık yok" }
-        : { label: "Yinelenen başlıklar (title)", status: dupTitles > 2 ? "fail" : "warn", detail: `${dupTitles} sayfada aynı başlık` },
-      dupDescs === 0
+        : { label: "Yinelenen başlıklar (title)", status: dupTitleUrls.length > 5 ? "fail" : "warn", detail: `${dupTitleUrls.length} sayfada tekrar eden başlık`, urls: dupTitleUrls },
+      dupDescUrls.length === 0
         ? { label: "Yinelenen meta açıklamalar", status: "pass", detail: "Tekrarlayan meta yok" }
-        : { label: "Yinelenen meta açıklamalar", status: dupDescs > 2 ? "fail" : "warn", detail: `${dupDescs} sayfada aynı meta` },
-      missTitle === 0
-        ? { label: "Eksik başlık", status: "pass", detail: "Tümünde başlık var" }
-        : { label: "Eksik başlık", status: "fail", detail: `${missTitle} sayfada başlık yok` },
-      missDesc === 0
-        ? { label: "Eksik meta açıklama", status: "pass", detail: "Tümünde meta var" }
-        : { label: "Eksik meta açıklama", status: missDesc > pages.length / 2 ? "fail" : "warn", detail: `${missDesc} sayfada meta yok` },
+        : { label: "Yinelenen meta açıklamalar", status: dupDescUrls.length > 5 ? "fail" : "warn", detail: `${dupDescUrls.length} sayfada tekrar eden meta`, urls: dupDescUrls },
+      missTitleUrls.length === 0
+        ? { label: "Eksik başlık", status: "pass", detail: "Tüm sayfalarda başlık var" }
+        : { label: "Eksik başlık", status: "fail", detail: `${missTitleUrls.length} sayfada başlık yok`, urls: missTitleUrls },
+      missDescUrls.length === 0
+        ? { label: "Eksik meta açıklama", status: "pass", detail: "Tüm sayfalarda meta var" }
+        : { label: "Eksik meta açıklama", status: missDescUrls.length > pages.length / 2 ? "fail" : "warn", detail: `${missDescUrls.length} sayfada meta yok`, urls: missDescUrls },
+      missH1Urls.length === 0
+        ? { label: "Eksik H1", status: "pass", detail: "Tüm sayfalarda H1 var" }
+        : { label: "Eksik H1", status: missH1Urls.length > pages.length / 2 ? "fail" : "warn", detail: `${missH1Urls.length} sayfada H1 yok`, urls: missH1Urls },
     ];
-    return { id: "site", title: "Site Geneli (sitemap örneklemi)", checks };
+    return { id: "site", title: `Site Geneli Taraması (en fazla ${CRAWL_LIMIT} sayfa)`, checks };
   } catch {
     return null;
   }
@@ -497,7 +560,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   // AI analizi + sınırlı site crawl (paralel)
   const [ai, siteGroup] = await Promise.all([
     analyzeContentAI({ url: lh.finalUrl, title: crawlRes.title, metaDescription: crawlRes.desc, pageText: crawlRes.pageText }).catch(() => null),
-    siteCrawl(crawlRes.origin).catch(() => null),
+    siteCrawl(crawlRes.origin, lh.finalUrl).catch(() => null),
   ]);
 
   // Performans grubunu (metrik durumlarından) ekle

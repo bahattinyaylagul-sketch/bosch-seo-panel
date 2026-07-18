@@ -710,36 +710,6 @@ export default function AuditTool() {
           {/* ── SEO AKSİYON PLANI (AI) ── */}
           {filter === "all" && res.seoPlan && <SeoPlan plan={res.seoPlan} />}
 
-          {/* ── BÖLÜM ÇİPLERİ ── */}
-          {filter === "all" && (
-            <div className="flex flex-wrap gap-2 mb-6">
-              {res.groups.map((g) => {
-                const err = g.checks.filter((c) => !c.info && c.status === "fail").length;
-                const warn = g.checks.filter((c) => !c.info && c.status === "warn").length;
-                return (
-                  <button key={g.id} onClick={() => scrollToGroup(g.id)} className="rounded-bosch border border-surface-border px-3 py-1.5 text-xs text-ink hover:bg-surface-muted transition-colors flex items-center gap-1.5">
-                    {g.title.split(" · ")[0]}
-                    {err > 0 && <span className="text-bosch-red font-medium">{err}</span>}
-                    {warn > 0 && <span className="text-amber-600 font-medium">{warn}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ── Hız fırsatları ── */}
-          {filter === "all" && res.opportunities.length > 0 && (
-            <div className="border border-surface-border rounded-bosch overflow-hidden mb-6">
-              <div className="px-4 py-2.5 bg-surface-muted text-sm font-semibold text-ink border-b border-surface-border">Hız iyileştirme fırsatları</div>
-              {res.opportunities.map((o, i) => (
-                <div key={i} className="flex items-start justify-between gap-4 px-4 py-2.5 border-t border-surface-border first:border-t-0">
-                  <span className="text-sm text-ink">{o.title}</span>
-                  <span className="text-xs text-bosch-red font-medium whitespace-nowrap">{o.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* ── PERFORMANS (mobil/masaüstü + CrUX) ── */}
           {filter === "all" && <PerfBlock data={res} />}
 
@@ -758,10 +728,21 @@ export default function AuditTool() {
           )}
 
           {/* ── GRUPLAR (görseller & linkler tabloları ilgili gruptan önce) ── */}
-          {res.groups.map((g, gi) => (
+          {res.groups.map((g) => (
             <div key={g.id}>
               {filter === "all" && g.id === "images" && res.imagesList && <ImagesTable list={res.imagesList} />}
               <GroupCard group={g} filter={filter} refCb={(el) => (groupRefs.current[g.id] = el)} />
+              {filter === "all" && g.id === "perf" && res.opportunities.length > 0 && (
+                <div className="border border-surface-border rounded-bosch overflow-hidden mb-4">
+                  <div className="px-4 py-2.5 bg-surface-muted text-sm font-semibold text-ink border-b border-surface-border">Hız iyileştirme fırsatları (çözümler)</div>
+                  {res.opportunities.map((o, i) => (
+                    <div key={i} className="flex items-start justify-between gap-4 px-4 py-2.5 border-t border-surface-border first:border-t-0">
+                      <span className="text-sm text-ink">{o.title}</span>
+                      <span className="text-xs text-bosch-red font-medium whitespace-nowrap">{o.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 

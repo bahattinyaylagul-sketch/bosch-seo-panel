@@ -151,6 +151,13 @@ const FIX: Record<string, string> = {
   "llms.txt": "Kök dizine llms.txt ekleyerek AI motorlarına içerik rehberi sunun (yeni, opsiyonel standart).",
   "URL hijyeni (site geneli)": "URL'leri kısa, küçük harf, tire ayraçlı ve sığ (az segmentli) tutun; okunabilir ve taranabilir olsun.",
   "INP (gerçek kullanıcı)": "Etkileşim gecikmesini azaltın: uzun JS görevlerini bölün, ana thread'i boşaltın (CrUX gerçek kullanıcı verisi).",
+  "Soft 404": "200 dönen ama içeriği olmayan sayfaları gerçek 404 döndürün ya da içerik ekleyin; AI/arama motorlarını yanıltmasın.",
+  "WWW tutarlılığı (site geneli)": "Tek bir ana host'ta karar kılın (www veya www'siz) ve diğerini 301 ile yönlendirin.",
+  "Parametreli URL'ler (site geneli)": "Parametreli URL'lere canonical verin veya parametreleri Search Console'da tanımlayın; yinelenen içerik ve crawl bütçesi kaybını önler.",
+  "İçindekiler (TOC)": "Uzun içeriklere sayfa-içi bağlantılı bir içindekiler (TOC) ekleyin; hem UX hem AI pasaj çıkarımı için faydalı.",
+  "Tablo & liste kullanımı": "Bilgiyi tablo ve listelerle yapılandırın; AI motorları bunları daha kolay alıntılar.",
+  "HTTP → HTTPS yönlendirmesi": "http:// adresini 301 ile https:// sürümüne yönlendirin.",
+  "Yönlendirme döngüsü": "Yönlendirme döngüsünü kırın; sayfa hiç açılmaz ve crawler takılır.",
 };
 // Lighthouse "opportunity" audit id → Türkçe başlık
 const OPP_TR: Record<string, string> = {
@@ -588,6 +595,21 @@ async function fetchLlmsTxt(origin: string): Promise<boolean> {
   const r = await safeFetchText(origin + "/llms.txt", 5000);
   return r.ok;
 }
+async function checkHttpsRedirect(finalUrl: string): Promise<Check | null> {
+  try {
+    const u = new URL(finalUrl);
+    if (u.protocol !== "https:") return { label: "HTTP → HTTPS yönlendirmesi", status: "fail", detail: "Site HTTPS değil", fix: FIX["HTTP → HTTPS yönlendirmesi"] };
+    const httpUrl = "http://" + u.host + u.pathname;
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 6000);
+    const r = await fetch(httpUrl, { redirect: "follow", signal: c.signal, headers: { "User-Agent": UA } }).catch(() => null);
+    clearTimeout(t);
+    if (!r) return null;
+    return r.url.startsWith("https://")
+      ? { label: "HTTP → HTTPS yönlendirmesi", status: "pass", detail: "http:// → https:// yönleniyor" }
+      : { label: "HTTP → HTTPS yönlendirmesi", status: "fail", detail: "http:// HTTPS'e yönlenmiyor", fix: FIX["HTTP → HTTPS yönlendirmesi"] };
+  } catch { return null; }
+}
 function urlHygieneBad(pages: PageInfo[]): string[] {
   const bad: string[] = [];
   for (const p of pages) {
@@ -606,6 +628,7 @@ interface BuildExtra {
   redirectChain?: Check | null;
   aiAccess?: Check | null;
   llmsTxt?: Check | null;
+  httpsRedirect?: Check | null;
 }
 function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, extra: BuildExtra = {}): CheckGroup[] {
   const html = page.html;
@@ -663,12 +686,22 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   tech.push(h("x-content-type-options")
     ? { label: "X-Content-Type-Options", status: "pass", detail: h("x-content-type-options")! }
     : { label: "X-Content-Type-Options", status: "warn", detail: "Yok (MIME-sniffing koruması yok)" });
+  const soft404 = page.status >= 200 && page.status < 300 && /(^|[^0-9])404([^0-9]|$)|sayfa bulunamad|aradığınız sayfa|page not found|not found/i.test((page.title || "") + " " + page.text.slice(0, 400));
+  tech.push(soft404
+    ? { label: "Soft 404", status: "fail", detail: "200 dönüyor ama içerik 'bulunamadı' sinyali veriyor" }
+    : { label: "Soft 404", status: "pass", detail: "Soft 404 belirtisi yok" });
   // İndekslenebilirlik + canonical + noindex — site geneli varsa oradan, yoksa girilen sayfadan
   if (sitewide) {
     tech.push(siteCheck("noindex sayfalar", of((p) => p.noindex), 0,
       "Dizine kapalı sayfa yok", (n) => `${n} sayfa dizine kapalı (noindex)`, FIX["İndekslenebilirlik"]!));
     tech.push(siteCheck("Canonical yok", of((p) => p.status > 0 && p.status < 400 && !p.canonical), Math.floor(N / 2),
       "Tüm sayfalarda canonical var", (n) => `${n} sayfada canonical yok`, FIX["Canonical etiketi"]!));
+    tech.push(siteCheck("Parametreli URL'ler (site geneli)", of((p) => p.url.includes("?")), Math.floor(N / 3),
+      "Parametreli URL yok/az", (n) => `${n} sayfa URL parametresi içeriyor`, FIX["Parametreli URL'ler (site geneli)"]!));
+    const wwwMixed = (() => { const set = new Set<string>(); P.forEach((p) => { try { set.add(new URL(p.url).host.startsWith("www.") ? "www" : "root"); } catch {} }); return set.size > 1; })();
+    tech.push(wwwMixed
+      ? { label: "WWW tutarlılığı (site geneli)", status: "warn", detail: "Sayfalar hem www hem www'siz host kullanıyor", scope: "site", fix: FIX["WWW tutarlılığı (site geneli)"] }
+      : { label: "WWW tutarlılığı (site geneli)", status: "pass", detail: "Tek host varyantı (tutarlı)", scope: "site" });
   } else {
     const noindex = has(/<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i);
     tech.push(noindex
@@ -705,6 +738,14 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   onpage.push(h2 > 0
     ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2 (girilen sayfa)` }
     : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok (girilen sayfa)" });
+  const tocLinks = count(/<a[^>]+href=["']#[\w:.-]+["']/gi);
+  onpage.push(tocLinks >= 3
+    ? { label: "İçindekiler (TOC)", status: "pass", detail: `${tocLinks} sayfa-içi bağlantı (girilen sayfa)` }
+    : { label: "İçindekiler (TOC)", status: "warn", detail: "Sayfa-içi içindekiler (TOC) tespit edilmedi (girilen sayfa)" });
+  const tables = count(/<table[\s>]/gi); const lists = count(/<(ul|ol)[\s>]/gi);
+  onpage.push(tables + lists > 0
+    ? { label: "Tablo & liste kullanımı", status: "pass", detail: `${tables} tablo, ${lists} liste (girilen sayfa)` }
+    : { label: "Tablo & liste kullanımı", status: "warn", detail: "Yapılandırılmış içerik (tablo/liste) yok (girilen sayfa)" });
   const hrefs = Array.from(html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)).map((m) => m[1]);
   let internal = 0, external = 0;
   for (const href of hrefs) {
@@ -877,6 +918,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   // Dışarıdan gelen ek kontroller (async fetch gerektirenler)
   if (extra.redirectChain) tech.push(extra.redirectChain);
   if (extra.brokenLinks) tech.push(extra.brokenLinks);
+  if (extra.httpsRedirect) tech.push(extra.httpsRedirect);
   if (extra.aiAccess) geo.push(extra.aiAccess);
   if (extra.llmsTxt) geo.push(extra.llmsTxt);
   // URL hijyeni (site geneli, ek fetch YOK — mevcut P dizisinden)
@@ -914,13 +956,14 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   if (!lh.ok) return { ok: false, error: lh.error };
   if (!page.ok) return { ok: false, error: "Sayfa HTML'i alınamadı (zaman aşımı veya engel)." };
   // 2) Site tarama + görsel/link HEAD + redirect zinciri + robots + llms.txt paralel (mekanik crawler)
-  const [site, imagesList, linksRes, redirectChain, robotsRes, llmsTxt] = await Promise.all([
+  const [site, imagesList, linksRes, redirectChain, robotsRes, llmsTxt, httpsRedirect] = await Promise.all([
     siteCrawl(page.origin, lh.finalUrl).catch(() => null),
     fetchImagesList(page.html, page.finalUrl).catch(() => [] as AuditData["imagesList"]),
     fetchLinksList(page.html, page.finalUrl, page.host).catch(() => ({ list: [], broken: [] as string[] })),
     fetchRedirectChain(url).catch(() => [] as { url: string; status: number }[]),
     safeFetchText(page.origin + "/robots.txt", 6000),
     fetchLlmsTxt(page.origin).catch(() => false),
+    checkHttpsRedirect(page.finalUrl).catch(() => null),
   ]);
   // v3 türetmeler (girilen sayfanın html'inden — uydurma yok)
   const serp = { title: page.title, desc: page.desc, url: page.finalUrl };
@@ -934,9 +977,13 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const brokenLinks: Check | null = linksRes.broken.length > 0
     ? { label: "Kırık linkler (girilen sayfa)", status: "fail", detail: `${linksRes.broken.length} bağlantı 4xx/5xx döndürüyor`, urls: linksRes.broken.slice(0, URL_CAP), fix: FIX["Kırık linkler (girilen sayfa)"] }
     : null;
-  const redirectChainCheck: Check | null = redirectChain.length > 1
-    ? { label: "Yönlendirme zinciri", status: "warn", detail: `${redirectChain.length} adımlı yönlendirme zinciri`, urls: redirectChain.map((s: { url: string; status: number }) => `${s.url} (${s.status})`), fix: FIX["Yönlendirme zinciri"] }
-    : null;
+  const chainUrls = redirectChain.map((s: { url: string; status: number }) => `${s.url} (${s.status})`);
+  const hasLoop = redirectChain.length > 1 && new Set(redirectChain.map((s: { url: string; status: number }) => s.url)).size !== redirectChain.length;
+  const redirectChainCheck: Check | null = hasLoop
+    ? { label: "Yönlendirme döngüsü", status: "fail", detail: "Yönlendirme döngüsü tespit edildi", urls: chainUrls, fix: FIX["Yönlendirme döngüsü"] }
+    : redirectChain.length > 1
+      ? { label: "Yönlendirme zinciri", status: "warn", detail: `${redirectChain.length} adımlı yönlendirme zinciri`, urls: chainUrls, fix: FIX["Yönlendirme zinciri"] }
+      : null;
   const blockedBots = aiAccess.filter((b) => !b.allowed).map((b) => b.bot);
   const aiAccessCheck: Check = blockedBots.length > 0
     ? { label: "AI bot erişimi", status: "warn", detail: `AI botlarına kapalı: ${blockedBots.join(", ")}`, fix: FIX["AI bot erişimi"] }
@@ -945,7 +992,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
     ? { label: "llms.txt", status: "pass", detail: "llms.txt mevcut" }
     : { label: "llms.txt", status: "warn", detail: "llms.txt yok (AI motorları için opsiyonel rehber)", fix: FIX["llms.txt"] };
   // 3) Grupları kur (site geneli bulgular kategorilere dağıtılmış halde)
-  const groups = buildGroups(page, site, lh, { brokenLinks, redirectChain: redirectChainCheck, aiAccess: aiAccessCheck, llmsTxt: llmsTxtCheck });
+  const groups = buildGroups(page, site, lh, { brokenLinks, redirectChain: redirectChainCheck, aiAccess: aiAccessCheck, llmsTxt: llmsTxtCheck, httpsRedirect });
   // Öneri metinlerini bağla (elle atanmamışsa)
   for (const g of groups) g.checks = g.checks.map((c) => ({ ...c, fix: c.fix ?? FIX[c.label] }));
   // 4) AI katmanı — mekanik bulgular TEK çağrıyla yorumlanır (site geneli), per-sayfa değil

@@ -12,7 +12,7 @@ export default async function GeoChecklistPage() {
   const markets = await getMarkets();
   return (
     <div>
-      <PageHeader title="GEO Checklist" description="AI görünürlük / GEO görevlerini pazar (ülke) bazında takip edin — başlanmadı, devam ediyor, tamamlandı." />
+      <PageHeader title="GEO Checklist" description="Site Denetimi'nde bulunan eksikleri pazar (ülke) bazında iş takibi olarak yönetin — başlanmadı, devam ediyor, tamamlandı." />
       <ChecklistClient markets={markets} />
     </div>
   );

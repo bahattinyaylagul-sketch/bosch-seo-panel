@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { GEO_TASKS, GEO_CATEGORIES, GEO_TOTAL_POINTS, type Priority, type TaskStatus } from "@/lib/geo-checklist";
+import { type Priority, type TaskStatus } from "@/lib/geo-checklist";
 import { getTaskStatuses, setTaskStatus, setTaskNote, getCustomTasks, deleteCustomTask, type MarketRow, type TaskState, type CustomTask } from "./actions";
 
 const RED = "#ED0007", AMBER = "#E88E00", BLUE = "#007BC0", GREEN = "#00884A";
@@ -26,7 +26,6 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
   const [custom, setCustom] = useState<CustomTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() => Object.fromEntries(GEO_CATEGORIES.map((c) => [c.id, true])));
   const [fPri, setFPri] = useState<string>("all");
   const [fStat, setFStat] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -51,23 +50,25 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
     await setTaskNote(id, marketId, note);
   }
 
+  const PTS: Record<string, number> = { critical: 10, high: 8, medium: 6, low: 4 };
   const stats = useMemo(() => {
-    let earned = 0, done = 0, doing = 0, criticalPending = 0;
-    for (const t of GEO_TASKS) {
+    let earned = 0, total = 0, done = 0, doing = 0, criticalPending = 0;
+    for (const t of custom) {
+      const pts = PTS[t.priority] ?? 8; total += pts;
       const s = stOf(t.id);
-      if (s === "done") { earned += t.points; done++; }
-      else if (s === "doing") { earned += t.points * 0.5; doing++; }
+      if (s === "done") { earned += pts; done++; }
+      else if (s === "doing") { earned += pts * 0.5; doing++; }
       if (t.priority === "critical" && s !== "done") criticalPending++;
     }
-    return { earned: Math.round(earned), done, doing, criticalPending, pct: Math.round((100 * earned) / GEO_TOTAL_POINTS) };
-  }, [states]);
+    return { earned: Math.round(earned), total, done, doing, criticalPending, count: custom.length, pct: total ? Math.round((100 * earned) / total) : 0 };
+  }, [states, custom]);
 
-  const visible = (t: (typeof GEO_TASKS)[number]) => {
+  const visibleCustom = custom.filter((t) => {
     if (fPri !== "all" && t.priority !== fPri) return false;
     if (fStat !== "all" && stOf(t.id) !== fStat) return false;
-    if (q && !(t.title + " " + t.desc).toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !((t.title + " " + (t.descr ?? "")).toLowerCase().includes(q.toLowerCase()))) return false;
     return true;
-  };
+  });
 
   return (
     <div>
@@ -84,9 +85,9 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <div className="border border-surface-border rounded-bosch p-4 flex items-center gap-3">
           <Ring value={stats.pct} />
-          <div><div className="text-xs text-ink-body">Genel GEO Skoru</div><div className="text-[11px] text-ink-body/70">{stats.earned} / {GEO_TOTAL_POINTS} puan</div></div>
+          <div><div className="text-xs text-ink-body">Genel GEO Skoru</div><div className="text-[11px] text-ink-body/70">{stats.earned} / {stats.total} puan</div></div>
         </div>
-        <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Toplam Görev</div><div className="text-3xl font-semibold text-ink">{GEO_TASKS.length}</div></div>
+        <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Toplam Görev</div><div className="text-3xl font-semibold text-ink">{stats.count}</div></div>
         <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Tamamlanan</div><div className="text-3xl font-semibold text-bosch-green">{stats.done}</div></div>
         <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Devam Eden</div><div className="text-3xl font-semibold text-amber-600">{stats.doing}</div></div>
         <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Kritik Bekleyen</div><div className="text-3xl font-semibold text-bosch-red">{stats.criticalPending}</div></div>
@@ -103,11 +104,20 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
         </select>
       </div>
 
-      {/* ── Denetimden Eklenenler ── */}
+      {/* ── Denetim bulguları (iş takibi) ── */}
+      {custom.length === 0 && (
+        <div className="border border-surface-border rounded-bosch p-8 text-center">
+          <div className="text-sm font-medium text-ink mb-1">Bu pazar için henüz görev yok</div>
+          <div className="text-xs text-ink-body">Site Denetimi&apos;nde bir siteyi tarayın, rapor içindeki <span className="font-medium">&ldquo;Checklist&apos;e aktar&rdquo;</span> ile bulunan eksikleri buraya görev olarak ekleyin.</div>
+        </div>
+      )}
       {custom.length > 0 && (
         <div className="border border-bosch-blue/30 rounded-bosch mb-4 overflow-hidden">
-          <div className="px-4 py-3 bg-bosch-blue/5 text-sm font-semibold text-ink">Denetimden Eklenenler ({custom.length})</div>
-          {custom.map((t) => {
+          <div className="px-4 py-3 bg-bosch-blue/5 text-sm font-semibold text-ink flex items-center justify-between">
+            <span>Denetim Bulguları — İş Takibi</span>
+            <span className="text-xs font-normal text-ink-body">{visibleCustom.length} / {custom.length} görev</span>
+          </div>
+          {visibleCustom.map((t) => {
             const s = stOf(t.id);
             const expanded = open === t.id;
             const pri = PRI[(t.priority as Priority)] ?? PRI.high;
@@ -141,65 +151,6 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
         </div>
       )}
 
-      {/* ── Kategoriler ── */}
-      {GEO_CATEGORIES.map((cat) => {
-        const tasks = GEO_TASKS.filter((t) => t.cat === cat.id);
-        const shown = tasks.filter(visible);
-        if (shown.length === 0) return null;
-        const doneN = tasks.filter((t) => stOf(t.id) === "done").length;
-        const pct = Math.round((100 * doneN) / tasks.length);
-        const isOpen = openCats[cat.id];
-        return (
-          <div key={cat.id} className="border border-surface-border rounded-bosch mb-4 overflow-hidden">
-            <button onClick={() => setOpenCats((o) => ({ ...o, [cat.id]: !o[cat.id] }))} className="w-full px-4 py-3 bg-surface-muted hover:bg-surface-border/40 transition-colors text-left">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <span className="text-sm font-semibold text-ink">{cat.title}</span>
-                <span className="text-xs text-ink-body">{doneN}/{tasks.length} · %{pct} {isOpen ? "▾" : "▸"}</span>
-              </div>
-              <div className="h-1.5 w-full rounded-bosch bg-surface-border overflow-hidden"><div className="h-full bg-bosch-red" style={{ width: `${pct}%` }} /></div>
-            </button>
-            {isOpen && (
-              <div>
-                {shown.map((t) => {
-                  const s = stOf(t.id);
-                  const expanded = open === t.id;
-                  const pri = PRI[t.priority];
-                  return (
-                    <div key={t.id} className="border-t border-surface-border">
-                      <button onClick={() => setOpen(expanded ? null : t.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted/40 transition-colors">
-                        <span className="h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[10px] border" style={{ borderColor: s === "done" ? GREEN : s === "doing" ? AMBER : "#d1d5db", background: s === "done" ? GREEN : s === "doing" ? AMBER : "transparent", color: "#fff" }}>{s === "done" ? "✓" : s === "doing" ? "…" : ""}</span>
-                        <span className={`flex-1 text-sm ${s === "done" ? "line-through text-ink-body" : "text-ink font-medium"}`}>{t.title}</span>
-                        <span className="rounded-bosch text-[11px] px-2 py-0.5 font-medium whitespace-nowrap" style={{ backgroundColor: (t.impact === "high" ? RED : AMBER) + "1a", color: t.impact === "high" ? RED : "#B45309" }}>{t.impact === "high" ? "Yüksek Etki" : "Hızlı Kazanım"}</span>
-                        <span className="hidden sm:flex items-center gap-0.5">{Array.from({ length: 10 }).map((_, i) => <span key={i} className="h-3 w-1 rounded-sm" style={{ background: i < t.points ? pri.c : "#e5e7eb" }} />)}</span>
-                        <span className="rounded-bosch text-[11px] px-2 py-0.5 font-medium whitespace-nowrap" style={{ backgroundColor: pri.c + "1a", color: pri.c }}>{pri.t}</span>
-                        <span className="text-ink-body/50 text-xs w-4 text-center">{expanded ? "▾" : "▸"}</span>
-                      </button>
-                      {expanded && (
-                        <div className="px-4 pb-4 pl-12 space-y-3">
-                          <p className="text-sm text-ink-body">{t.desc}</p>
-                          <div className="rounded-bosch bg-surface-muted border-l-2 border-bosch-blue px-3 py-2 text-xs"><span className="font-medium text-ink">Nasıl Yapılır? </span><span className="text-ink-body">{t.howTo}</span></div>
-                          <div className="flex gap-2">
-                            {(["todo", "doing", "done"] as TaskStatus[]).map((opt) => {
-                              const label = opt === "todo" ? "Başlanmadı" : opt === "doing" ? "Devam Ediyor" : "Tamamlandı";
-                              const active = s === opt;
-                              const col = opt === "done" ? GREEN : opt === "doing" ? AMBER : "#6b7280";
-                              return <button key={opt} onClick={() => changeStatus(t.id, opt)} className="rounded-bosch border px-3 py-1.5 text-xs font-medium transition-colors" style={{ borderColor: active ? col : "#e5e7eb", color: active ? col : "#6b7280", background: active ? col + "12" : "transparent" }}>{label}</button>;
-                            })}
-                          </div>
-                          <div>
-                            <div className="text-xs text-ink-body mb-1">Notlar</div>
-                            <textarea defaultValue={states[t.id]?.note ?? ""} onBlur={(e) => saveNote(t.id, e.target.value)} rows={2} placeholder="Not ekle… (odaktan çıkınca kaydedilir)" className="w-full rounded-bosch border border-surface-border bg-white px-3 py-2 text-xs text-ink outline-none focus:border-bosch-blue" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }

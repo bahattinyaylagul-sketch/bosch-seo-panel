@@ -593,6 +593,11 @@ function ExportToChecklist({ data }: { data: AuditData }) {
       if (c.info || c.status === "pass") return;
       out.push({ title: c.label, descr: c.detail + (c.fix ? " — Öneri: " + c.fix : ""), priority: c.status === "fail" ? "critical" : "high" });
     }));
+    // AI/GEO analiz boyutları (düşük skorlular → görev, AI yorumu açıklama)
+    if (data.ai) {
+      const dims = [...data.ai.contentQuality, ...data.ai.eeat, ...data.ai.aiVisibility, ...data.ai.geo];
+      dims.forEach((d) => { if (d.score < 60) out.push({ title: `AI/GEO: ${d.label}`, descr: `Skor ${d.score}/100 — ${d.note}`, priority: d.score < 40 ? "critical" : "high" }); });
+    }
     return out;
   }, [data]);
   async function run() {
@@ -733,7 +738,7 @@ export default function AuditTool() {
           {filter === "all" && <ExportToChecklist data={res} />}
 
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center">
               <div className="text-xs font-semibold text-ink self-start mb-1">Site Sağlığı</div>
               <HalfGauge value={res.health} hex={healthHex(res.health)} />
@@ -741,7 +746,6 @@ export default function AuditTool() {
             </div>
             <BigStat label="Hata" value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
             <BigStat label="Uyarı" value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
-            <BigStat label="Bilgi" value={res.infoCount ?? 0} hex={BLUE} />
           </div>
           {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
 

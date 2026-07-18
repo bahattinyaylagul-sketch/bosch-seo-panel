@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+// Yapılandırılan model geçersiz/erişilemezse denenecek bilinen çalışan modeller
+const FALLBACK_MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
 
 export interface ScoredDim {
   key: string;
@@ -96,21 +98,35 @@ export async function analyzeContentAI(input: {
     page_text: text,
   });
 
+  // Yapılandırılan modeli dene; model hatası olursa bilinen modellere sırayla düş
+  const tryModels = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
   let raw = "";
-  try {
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 1600,
-      temperature: 0.2,
-      system,
-      messages: [{ role: "user", content: payload }],
-    });
-    raw = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-  } catch (e: any) {
-    if (diag) diag.error = "AI çağrısı başarısız: " + String(e?.message || e).slice(0, 160) + " (model adı/kotayı kontrol edin).";
+  let lastErr: any = null;
+  for (const m of tryModels) {
+    try {
+      const msg = await client.messages.create({
+        model: m,
+        max_tokens: 1600,
+        temperature: 0.2,
+        system,
+        messages: [{ role: "user", content: payload }],
+      });
+      raw = msg.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      lastErr = e;
+      const status = e?.status ?? e?.statusCode;
+      // 404/400 = model geçersiz → sıradaki modeli dene; diğer hatalar (401/429) tekrar denemeye değmez
+      if (status === 404 || status === 400) continue;
+      break;
+    }
+  }
+  if (lastErr) {
+    if (diag) diag.error = "AI çağrısı başarısız: " + String(lastErr?.message || lastErr).slice(0, 160) + " (model adı/API key/kotayı kontrol edin).";
     return null;
   }
 
@@ -194,17 +210,29 @@ export async function analyzeSeoActionPlan(
     "SADECE şu JSON ile yanıt ver, başka hiçbir metin ekleme:",
     JSON.stringify({ summary: "string (1-2 cümle genel durum)", actions: [{ title: "string", why: "string (neden önemli / hangi bulgudan)", priority: "yüksek|orta|düşük" }] }),
   ].join("\n");
+  const tryModels = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
   let raw = "";
-  try {
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 1400,
-      temperature: 0.2,
-      system,
-      messages: [{ role: "user", content: input.findings.slice(0, 8000) }],
-    });
-    raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-  } catch { return null; }
+  let lastErr: any = null;
+  for (const m of tryModels) {
+    try {
+      const msg = await client.messages.create({
+        model: m,
+        max_tokens: 1400,
+        temperature: 0.2,
+        system,
+        messages: [{ role: "user", content: input.findings.slice(0, 8000) }],
+      });
+      raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      lastErr = e;
+      const status = e?.status ?? e?.statusCode;
+      if (status === 404 || status === 400) continue;
+      break;
+    }
+  }
+  if (lastErr) return null;
   let j: any;
   try {
     let s = raw.trim();

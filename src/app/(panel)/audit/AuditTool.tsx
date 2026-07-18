@@ -305,9 +305,21 @@ function SocialPreview({ social, url }: { social: NonNullable<AuditData["social"
 }
 
 // ── Görseller tablosu ──────────────────────────────────────────────────────
+function decodeEntities(s: string) {
+  return s.replace(/&#x27;|&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
+}
+function imgFileName(s: string) {
+  try {
+    const u = new URL(s);
+    if (u.pathname.includes("/_next/image") || u.pathname.includes("/cdn-cgi/")) {
+      const orig = u.searchParams.get("url");
+      if (orig) { try { return decodeURIComponent(orig).split("?")[0].split("/").pop() || "görsel"; } catch { return "görsel"; } }
+    }
+    return u.pathname.split("/").pop() || u.host;
+  } catch { return s.slice(0, 40); }
+}
 function ImagesTable({ list }: { list: NonNullable<AuditData["imagesList"]> }) {
   if (!list.length) return null;
-  const short = (s: string) => { try { const u = new URL(s); return u.pathname.split("/").pop() || u.host; } catch { return s.slice(0, 40); } };
   return (
     <div className="border border-surface-border rounded-bosch overflow-hidden mb-4">
       <div className="px-4 py-2.5 bg-surface-muted text-sm font-semibold text-ink border-b border-surface-border">Görseller ({list.length})</div>
@@ -315,15 +327,19 @@ function ImagesTable({ list }: { list: NonNullable<AuditData["imagesList"]> }) {
         <table className="w-full text-xs min-w-[520px]">
           <thead><tr className="text-ink-body text-left"><th className="px-3 py-2 font-medium">Önizleme</th><th className="px-3 py-2 font-medium">Dosya</th><th className="px-3 py-2 font-medium">Alt</th><th className="px-3 py-2 font-medium">KB</th><th className="px-3 py-2 font-medium">Durum</th></tr></thead>
           <tbody>
-            {list.map((im, i) => (
-              <tr key={i} className="border-t border-surface-border">
-                <td className="px-3 py-2"><img src={im.src} alt="" className="h-10 w-10 object-cover rounded bg-surface-muted" /></td>
-                <td className="px-3 py-2 text-ink break-all">{short(im.src)}</td>
-                <td className="px-3 py-2">{im.alt == null || im.alt === "" ? <span className="text-bosch-red font-medium">yok</span> : <span className="text-ink-body">{im.alt.slice(0, 40)}</span>}</td>
-                <td className="px-3 py-2" style={{ color: im.kb != null && im.kb >= 70 ? AMBER : undefined }}>{im.kb ?? "—"}</td>
-                <td className="px-3 py-2" style={{ color: im.status != null && im.status >= 400 ? RED : undefined }}>{im.status ?? "—"}</td>
-              </tr>
-            ))}
+            {list.map((im, i) => {
+              const st = im.status;
+              const broken = st != null && (st === 404 || st === 410 || st >= 500);
+              return (
+                <tr key={i} className="border-t border-surface-border">
+                  <td className="px-3 py-2"><img src={im.src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} className="h-10 w-10 object-cover rounded bg-surface-muted" /></td>
+                  <td className="px-3 py-2 text-ink break-all">{imgFileName(im.src)}</td>
+                  <td className="px-3 py-2">{im.alt == null || im.alt === "" ? <span className="text-bosch-red font-medium">yok</span> : <span className="text-ink-body">{decodeEntities(im.alt).slice(0, 50)}</span>}</td>
+                  <td className="px-3 py-2" style={{ color: im.kb != null && im.kb >= 70 ? AMBER : undefined }}>{im.kb ? im.kb : "—"}</td>
+                  <td className="px-3 py-2" style={{ color: broken ? RED : undefined }}>{st == null ? "—" : broken ? st : "ok"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

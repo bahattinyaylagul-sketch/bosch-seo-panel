@@ -517,7 +517,7 @@ async function fetchImagesList(html: string, base: string): Promise<{ src: strin
     if (items.length >= 15) break;
   }
   return runPool(items, 6, async (it) => {
-    const h = await headInfo(it.src, 5000);
+    const h = await headInfo(it.src, 5000, true);
     return { src: it.src, alt: it.alt, kb: h.kb, status: h.status };
   });
 }
@@ -541,7 +541,11 @@ async function fetchLinksList(html: string, base: string, host: string): Promise
     const h = await headInfo(it.href, 5000, true);
     return { ...it, status: h.status };
   });
-  const broken = list.filter((r) => r.status != null && r.status >= 400).map((r) => r.href);
+  // Yanlış pozitifi önle: dış siteler (LinkedIn 999, Medium 403 vb.) botları engeller.
+  // Sadece 5xx her iki tarafta; 404/410 yalnızca İÇ linklerde kırık sayılır. 401/403/405/429/999 = engelleme, kırık değil.
+  const broken = list
+    .filter((r) => r.status != null && (r.status >= 500 || ((r.status === 404 || r.status === 410) && r.type === "internal")))
+    .map((r) => r.href);
   return { list, broken };
 }
 function parseAiAccess(robots: string): { bot: string; allowed: boolean }[] {
@@ -739,13 +743,9 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2 (girilen sayfa)` }
     : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok (girilen sayfa)" });
   const tocLinks = count(/<a[^>]+href=["']#[\w:.-]+["']/gi);
-  onpage.push(tocLinks >= 3
-    ? { label: "İçindekiler (TOC)", status: "pass", detail: `${tocLinks} sayfa-içi bağlantı (girilen sayfa)` }
-    : { label: "İçindekiler (TOC)", status: "warn", detail: "Sayfa-içi içindekiler (TOC) tespit edilmedi (girilen sayfa)" });
+  onpage.push({ label: "İçindekiler (TOC)", status: tocLinks >= 3 ? "pass" : "warn", info: true, detail: tocLinks >= 3 ? `${tocLinks} sayfa-içi bağlantı (girilen sayfa)` : "Ham HTML'de sayfa-içi TOC yok — JS ile basılıyorsa AI crawler'lar görmez (girilen sayfa)" });
   const tables = count(/<table[\s>]/gi); const lists = count(/<(ul|ol)[\s>]/gi);
-  onpage.push(tables + lists > 0
-    ? { label: "Tablo & liste kullanımı", status: "pass", detail: `${tables} tablo, ${lists} liste (girilen sayfa)` }
-    : { label: "Tablo & liste kullanımı", status: "warn", detail: "Yapılandırılmış içerik (tablo/liste) yok (girilen sayfa)" });
+  onpage.push({ label: "Tablo & liste kullanımı", status: tables + lists > 0 ? "pass" : "warn", info: true, detail: `${tables} tablo, ${lists} liste (ham HTML · girilen sayfa)` });
   const hrefs = Array.from(html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)).map((m) => m[1]);
   let internal = 0, external = 0;
   for (const href of hrefs) {

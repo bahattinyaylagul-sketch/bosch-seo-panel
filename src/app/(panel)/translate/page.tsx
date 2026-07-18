@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui";
 import TranslateTool from "./TranslateTool";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function TranslatePage() {
   const profile = await getProfile();

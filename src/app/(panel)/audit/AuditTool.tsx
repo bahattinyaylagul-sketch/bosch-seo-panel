@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { auditSite, type AuditResult } from "./actions";
+import { auditSite, type AuditData } from "./actions";
 import { useT } from "@/components/LangProvider";
 
 function ScoreCard({ label, score }: { label: string; score: number | null }) {
@@ -24,7 +24,7 @@ function ScoreCard({ label, score }: { label: string; score: number | null }) {
 export default function AuditTool() {
   const t = useT();
   const [url, setUrl] = useState("");
-  const [res, setRes] = useState<AuditResult | null>(null);
+  const [res, setRes] = useState<AuditData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -35,7 +35,8 @@ export default function AuditTool() {
     start(async () => {
       try {
         const r = await auditSite(url);
-        setRes(r);
+        if (r.ok) setRes(r.data);
+        else setError(r.error);
       } catch (err) {
         setError(err instanceof Error ? err.message : t("au.error"));
       }

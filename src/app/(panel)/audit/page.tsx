@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui";
 import AuditTool from "./AuditTool";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export default async function AuditPage() {
   const profile = await getProfile();

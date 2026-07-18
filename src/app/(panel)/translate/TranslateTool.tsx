@@ -26,8 +26,9 @@ export default function TranslateTool() {
     setResult("");
     start(async () => {
       try {
-        const out = await translateFreeText(text, target);
-        setResult(out);
+        const r = await translateFreeText(text, target);
+        if (r.ok) setResult(r.text);
+        else setError(r.error);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Hata");
       }

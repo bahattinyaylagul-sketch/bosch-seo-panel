@@ -12,10 +12,17 @@ const LANG_NAME: Record<Locale, string> = {
   es: "Spanish",
 };
 
-export async function translateFreeText(text: string, target: string): Promise<string> {
-  const profile = await getProfile();
-  if (!profile || profile.role === "viewer") throw new Error("Yetkisiz");
-  if (!text.trim()) throw new Error("Boş metin");
-  const loc: Locale = isLocale(target) ? target : "en";
-  return translateText(text, loc, LANG_NAME[loc]);
+export type TranslateResponse = { ok: true; text: string } | { ok: false; error: string };
+
+export async function translateFreeText(text: string, target: string): Promise<TranslateResponse> {
+  try {
+    const profile = await getProfile();
+    if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+    if (!text.trim()) return { ok: false, error: "Boş metin" };
+    const loc: Locale = isLocale(target) ? target : "en";
+    const out = await translateText(text, loc, LANG_NAME[loc]);
+    return { ok: true, text: out };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Çeviri sırasında hata oluştu" };
+  }
 }

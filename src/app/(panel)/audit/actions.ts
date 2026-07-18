@@ -1,6 +1,7 @@
 "use server";
 import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { analyzeContentAI, analyzeSeoActionPlan, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
 // ─────────────────────────────────────────────────────────────────────────────
 // v2 MOTOR — Site geneli bulgular kategorilere dağıtıldı (Screaming Frog tarzı)
@@ -981,4 +982,77 @@ function buildSeoFindings(groups: CheckGroup[]): string {
     }
   }
   return lines.join("\n");
+}
+
+// ═══ Site Takibi: kalıcı site listesi + tarama geçmişi + değişim analizi ═══
+export interface AuditSite {
+  id: string;
+  url: string;
+  name: string | null;
+  created_at: string;
+  last: { health: number; errors: number; warnings: number; created_at: string } | null;
+}
+interface IssueSig { key: string; label: string; status: CheckStatus; urlCount: number }
+export interface ScanDiff {
+  hasPrev: boolean;
+  fixed: number; newer: number; ongoing: number;
+  fixedItems: { label: string }[];
+  newItems: { label: string }[];
+}
+export type RunScanResponse = { ok: true; data: AuditData; diff: ScanDiff } | { ok: false; error: string };
+
+export async function listAuditSites(): Promise<AuditSite[]> {
+  const profile = await getProfile();
+  if (!profile) return [];
+  const supabase = createClient();
+  const { data: sites } = await supabase.from("audit_sites").select("id,url,name,created_at").order("created_at", { ascending: false });
+  const { data: scans } = await supabase.from("audit_scans").select("site_id,health,errors,warnings,created_at").order("created_at", { ascending: false });
+  const last = new Map<string, { health: number; errors: number; warnings: number; created_at: string }>();
+  (scans ?? []).forEach((s: any) => { if (!last.has(s.site_id)) last.set(s.site_id, { health: s.health, errors: s.errors, warnings: s.warnings, created_at: s.created_at }); });
+  return (sites ?? []).map((s: any) => ({ id: s.id, url: s.url, name: s.name, created_at: s.created_at, last: last.get(s.id) ?? null }));
+}
+
+export async function addAuditSite(url: string, name: string): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile();
+  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+  let u = (url || "").trim();
+  if (!u) return { ok: false, error: "URL boş" };
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  const supabase = createClient();
+  const { error } = await supabase.from("audit_sites").insert({ url: u, name: (name || "").trim() || null });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function deleteAuditSite(id: string): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile();
+  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+  const supabase = createClient();
+  const { error } = await supabase.from("audit_sites").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function runSiteScan(siteId: string): Promise<RunScanResponse> {
+  const profile = await getProfile();
+  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+  const supabase = createClient();
+  const { data: site } = await supabase.from("audit_sites").select("id,url").eq("id", siteId).single();
+  if (!site) return { ok: false, error: "Site bulunamadı" };
+  const res = await auditSite(site.url);
+  if (!res.ok) return { ok: false, error: res.error };
+  const data = res.data;
+  const issues: IssueSig[] = data.groups.flatMap((g) =>
+    g.checks.filter((c) => !c.info && c.status !== "pass").map((c) => ({ key: c.label, label: c.label, status: c.status, urlCount: c.urls?.length ?? 0 }))
+  );
+  const { data: prev } = await supabase.from("audit_scans").select("issues").eq("site_id", siteId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const prevIssues: IssueSig[] = (prev?.issues as IssueSig[]) ?? [];
+  const hasPrev = !!prev;
+  const curKeys = new Set(issues.map((i) => i.key));
+  const prevKeys = new Set(prevIssues.map((i) => i.key));
+  const fixedItems = prevIssues.filter((i) => !curKeys.has(i.key)).map((i) => ({ label: i.label }));
+  const newItems = issues.filter((i) => !prevKeys.has(i.key)).map((i) => ({ label: i.label }));
+  const ongoing = issues.filter((i) => prevKeys.has(i.key)).length;
+  await supabase.from("audit_scans").insert({ site_id: siteId, health: data.health, errors: data.counts.errors, warnings: data.counts.warnings, passes: data.counts.passes, issues });
+  return { ok: true, data, diff: { hasPrev, fixed: fixedItems.length, newer: newItems.length, ongoing, fixedItems, newItems } };
 }

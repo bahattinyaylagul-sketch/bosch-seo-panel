@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition } from "react";
-import { auditSite, type AuditData, type Check, type CheckGroup, type CheckStatus } from "./actions";
+import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { useT } from "@/components/LangProvider";
 
@@ -165,12 +165,13 @@ function GroupCard({ group, filter, refCb }: { group: CheckGroup; filter: Filter
   );
 }
 
-function StatChip({ label, value, hex, active, onClick }: { label: string; value: number; hex: string; active: boolean; onClick: () => void }) {
+function StatChip({ label, value, hex, active, onClick, sub }: { label: string; value: number; hex: string; active: boolean; onClick: () => void; sub?: string }) {
   return (
     <button onClick={onClick} className={`rounded-bosch border p-3 text-center transition-all ${active ? "ring-2 ring-offset-1" : "hover:bg-surface-muted"}`}
       style={{ borderColor: active ? hex : "#E0E2E5", ...(active ? ({ ["--tw-ring-color" as any]: hex }) : {}) }}>
       <div className="text-2xl font-semibold" style={{ color: hex }}>{value}</div>
       <div className="text-xs text-ink-body">{label}</div>
+      {sub && <div className="text-[10px] text-ink-body/70 mt-0.5">{sub}</div>}
     </button>
   );
 }
@@ -400,6 +401,91 @@ function SeoPlan({ plan }: { plan: NonNullable<AuditData["seoPlan"]> }) {
   );
 }
 
+// ── Site Takibi: kalıcı site listesi + geçmişe göre "düzelen/yeni/devam" ────
+function SiteTracker({ onReport }: { onReport: (d: AuditData) => void }) {
+  const [sites, setSites] = useState<AuditSite[] | null>(null);
+  const [url, setUrl] = useState("");
+  const [name, setName] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [scanningId, setScanningId] = useState<string | null>(null);
+  const [diffs, setDiffs] = useState<Record<string, ScanDiff>>({});
+
+  const load = () => { listAuditSites().then(setSites).catch(() => setSites([])); };
+  useEffect(() => { load(); }, []);
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault(); setErr(null); setBusy(true);
+    try { const r = await addAuditSite(url, name); if (r.ok) { setUrl(""); setName(""); load(); } else setErr(r.error || "Eklenemedi"); }
+    finally { setBusy(false); }
+  }
+  async function del(id: string) { await deleteAuditSite(id); load(); }
+  async function scan(id: string) {
+    setScanningId(id); setErr(null);
+    try { const r = await runSiteScan(id); if (r.ok) { setDiffs((d) => ({ ...d, [id]: r.diff })); onReport(r.data); load(); } else setErr(r.error); }
+    catch { setErr("Tarama sırasında hata"); }
+    finally { setScanningId(null); }
+  }
+  const fmt = (s: string) => { try { return new Date(s).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return s; } };
+
+  return (
+    <div className="border border-surface-border rounded-bosch p-5 mb-6">
+      <div className="text-base font-semibold text-ink mb-1">Takip edilen siteler</div>
+      <p className="text-xs text-ink-body mb-4">Site ekleyin, düzenli tarayın. Her taramada bir öncekine göre <span className="text-bosch-green font-medium">düzelen</span>, <span className="text-bosch-red font-medium">yeni</span> ve devam eden sorunları görün.</p>
+
+      <form onSubmit={add} className="flex flex-col sm:flex-row gap-2 mb-4">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://site.com/tr/" className="flex-1 rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Etiket (opsiyonel)" className="sm:w-48 rounded-bosch border border-surface-border bg-white px-3 py-2 text-sm text-ink outline-none focus:border-bosch-blue" />
+        <button type="submit" disabled={busy} className="rounded-bosch bg-bosch-blue px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-60 whitespace-nowrap">{busy ? "Ekleniyor…" : "Site ekle"}</button>
+      </form>
+      {err && <p className="text-xs text-bosch-red mb-3">{err}</p>}
+
+      {sites === null ? (
+        <p className="text-xs text-ink-body">Yükleniyor…</p>
+      ) : sites.length === 0 ? (
+        <p className="text-xs text-ink-body">Henüz takip edilen site yok. Yukarıdan bir URL ekleyin.</p>
+      ) : (
+        <div className="border border-surface-border rounded-bosch divide-y divide-surface-border">
+          {sites.map((s) => {
+            const d = diffs[s.id];
+            const scanning = scanningId === s.id;
+            return (
+              <div key={s.id} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  {s.last ? <Ring value={s.last.health} size={40} stroke={4} hex={healthHex(s.last.health)} /> : <span className="h-10 w-10 shrink-0 rounded-full border border-surface-border flex items-center justify-center text-[10px] text-ink-body">—</span>}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-ink font-medium truncate">{s.name || s.url}</div>
+                    <div className="text-xs text-ink-body break-all">{s.url}</div>
+                    {s.last && <div className="text-[11px] text-ink-body/70">Son tarama: {fmt(s.last.created_at)} · {s.last.errors} hata · {s.last.warnings} uyarı</div>}
+                  </div>
+                  <button onClick={() => scan(s.id)} disabled={scanning} className="rounded-bosch bg-bosch-red px-3 py-1.5 text-xs font-medium text-white hover:bg-bosch-red-hover transition-colors disabled:opacity-60 whitespace-nowrap">{scanning ? "Taranıyor… (1-3 dk)" : s.last ? "Tekrar tara" : "Tara"}</button>
+                  <button onClick={() => del(s.id)} className="text-xs text-ink-body hover:text-bosch-red">Sil</button>
+                </div>
+                {d && (
+                  <div className="mt-3 ml-13 rounded-bosch bg-surface-muted p-3 text-xs">
+                    {d.hasPrev ? (
+                      <div className="flex flex-wrap gap-3">
+                        <span className="text-bosch-green font-medium">✓ {d.fixed} sorun düzeldi</span>
+                        <span className="text-bosch-red font-medium">＋ {d.newer} yeni sorun</span>
+                        <span className="text-ink-body">• {d.ongoing} devam eden</span>
+                      </div>
+                    ) : (
+                      <span className="text-ink-body">İlk tarama kaydedildi — sonraki taramada karşılaştırma çıkacak.</span>
+                    )}
+                    {d.fixedItems.length > 0 && <div className="mt-1.5 text-ink-body">Düzelenler: {d.fixedItems.slice(0, 5).map((i) => i.label).join(", ")}{d.fixedItems.length > 5 ? "…" : ""}</div>}
+                    {d.newItems.length > 0 && <div className="mt-0.5 text-ink-body">Yeni: {d.newItems.slice(0, 5).map((i) => i.label).join(", ")}{d.newItems.length > 5 ? "…" : ""}</div>}
+                    <div className="mt-1.5 text-bosch-blue">↓ Tam rapor aşağıda</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuditTool() {
   const t = useT();
   const [url, setUrl] = useState("");
@@ -420,6 +506,18 @@ export default function AuditTool() {
     });
   }
   const toggle = (f: Filter) => setFilter((cur) => (cur === f ? "all" : f));
+
+  // Onlardaki gibi "N URL etkilendi" — severity başına etkilenen sayfa toplamı
+  const affected = useMemo(() => {
+    if (!res) return { fail: 0, warn: 0 };
+    let f = 0, w = 0;
+    res.groups.forEach((g) => g.checks.forEach((c) => {
+      if (c.info) return;
+      const n = c.urls?.length ?? 0;
+      if (c.status === "fail") f += n; else if (c.status === "warn") w += n;
+    }));
+    return { fail: f, warn: w };
+  }, [res]);
   const scrollToGroup = (id: string) => groupRefs.current[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // İlk düzeltilecekler (yalnız fail, urls?.length ?? 1 azalan)
@@ -459,6 +557,9 @@ export default function AuditTool() {
 
   return (
     <div>
+      <SiteTracker onReport={(d) => { setRes(d); setFilter("all"); setError(null); }} />
+
+      <div className="text-sm font-semibold text-ink mb-2">Tek seferlik denetim</div>
       <form onSubmit={run} className="flex flex-col sm:flex-row gap-3 mb-2">
         <div className="flex-1">
           <label className="block text-xs text-ink-body mb-1">{t("au.url")}</label>
@@ -489,8 +590,8 @@ export default function AuditTool() {
                 {filter !== "all" && <button onClick={() => setFilter("all")} className="text-[11px] text-bosch-blue underline font-medium">Tümünü göster</button>}
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <StatChip label="Hata" value={res.counts.errors} hex={RED} active={filter === "fail"} onClick={() => toggle("fail")} />
-                <StatChip label="Uyarı" value={res.counts.warnings} hex={AMBER} active={filter === "warn"} onClick={() => toggle("warn")} />
+                <StatChip label="Hata" value={res.counts.errors} hex={RED} active={filter === "fail"} onClick={() => toggle("fail")} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} />
+                <StatChip label="Uyarı" value={res.counts.warnings} hex={AMBER} active={filter === "warn"} onClick={() => toggle("warn")} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} />
                 <StatChip label="Başarılı" value={res.counts.passes} hex={GREEN} active={filter === "pass"} onClick={() => toggle("pass")} />
               </div>
             </div>

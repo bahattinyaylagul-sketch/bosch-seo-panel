@@ -8,7 +8,56 @@ export interface Check {
   label: string;
   status: CheckStatus;
   detail: string;
+  fix?: string;
 }
+
+// Kontrol başlığına göre "öneri / nasıl düzeltilir" metni (satır açılınca gösterilir)
+const FIX: Record<string, string> = {
+  "Sunucu yanıt süresi (TTFB)": "Sunucu/CDN önbelleğini iyileştirin, TTFB'yi 800 ms altına indirin.",
+  "Sıkıştırma (gzip/brotli)": "Sunucuda Brotli veya Gzip sıkıştırmayı etkinleştirin; sayfa boyutu belirgin düşer.",
+  "HTML boyutu": "Satır içi (inline) fazla kodu ve gereksiz veriyi azaltın; HTML'i sadeleştirin.",
+  "HSTS güvenlik başlığı": "Strict-Transport-Security başlığı ekleyerek HTTPS'i zorunlu kılın.",
+  "X-Content-Type-Options": "X-Content-Type-Options: nosniff başlığı ekleyin (MIME-sniffing koruması).",
+  "İndekslenebilirlik": "Sayfa dizine alınmalıysa <meta name=robots content=noindex> etiketini kaldırın.",
+  "Canonical etiketi": "Her sayfaya kendine işaret eden (self-referencing) bir canonical ekleyin.",
+  "robots.txt": "Kök dizine robots.txt ekleyin ve içinde Sitemap satırı tanımlayın.",
+  "XML Sitemap": "XML sitemap oluşturup robots.txt'te belirtin ve Search Console'a gönderin.",
+  "Sayfa başlığı (title)": "Başlığı 10–60 karakter tutun; ana anahtar kelimeyi başa, markayı sona alın.",
+  "Meta açıklama": "50–160 karakter, tıklamayı teşvik eden (CTA içeren) benzersiz bir meta açıklama yazın.",
+  "H1 başlığı": "Sayfada tek bir H1 kullanın ve ana anahtar kelimeyi içersin.",
+  "Başlık hiyerarşisi (H2+)": "İçeriği H2/H3 alt başlıklarla bölerek mantıksal bir hiyerarşi kurun.",
+  "İçerik uzunluğu": "İçeriği en az 300+ kelimeye çıkararak konuyu kapsamlı işleyin.",
+  "Görsel alt metni": "Alt metni eksik anlamlı görsellere açıklayıcı alt metni ekleyin.",
+  "İç bağlantılar": "İlgili sayfalara bağlam içeren (contextual) iç bağlantılar ekleyin.",
+  "Dil etiketi (html lang)": "<html lang=\"tr\"> gibi bir dil etiketi tanımlayın.",
+  "hreflang (çok pazar/uluslararası)": "Diller/pazarlar arası hreflang etiketleri ekleyin — Bosch'un çok pazarlı yapısı için kritik.",
+  "Mobil viewport": "<meta name=viewport content=\"width=device-width, initial-scale=1\"> ekleyin.",
+  "Alt metni kapsamı": "Alt metni olmayan görsellere kısa, açıklayıcı alt metni ekleyin.",
+  "Modern format (WebP/AVIF)": "Görselleri WebP/AVIF formatında sunarak dosya boyutunu düşürün.",
+  "Lazy loading": "Ekran dışı görsellere loading=\"lazy\" ekleyin; ilk yük hızlanır.",
+  "Boyut tanımı (CLS)": "Görsellere width/height verin veya aspect-ratio kullanın; düzen kaymasını (CLS) önler.",
+  "Responsive viewport": "width=device-width içeren viewport meta etiketi ekleyin.",
+  "Tema rengi (theme-color)": "<meta name=theme-color> etiketi ekleyin.",
+  "Dokunmatik ikon / favicon": "apple-touch-icon ve favicon tanımlayın.",
+  "Yapısal veri (JSON-LD)": "Schema.org JSON-LD ekleyin (Organization, Product, BreadcrumbList, FAQ). AI motorları için kritik.",
+  "Kurum şeması (Organization)": "Organization/LocalBusiness şeması ekleyerek marka varlığını (entity) netleştirin.",
+  "Ürün şeması (Product/Offer)": "Ürün sayfalarına Product + Offer şeması ekleyin (fiyat, stok, puan).",
+  "Breadcrumb şeması": "BreadcrumbList şeması ekleyerek gezinme yolunu tanımlayın.",
+  "SSS / Soru-Cevap şeması": "Sık sorulan sorular için FAQPage şeması ekleyin — AI cevaplarında öne çıkarır.",
+  "Open Graph (paylaşım/AI önizleme)": "og:title, og:description ve og:image etiketlerini tamamlayın.",
+  "Twitter/X kartı": "twitter:card (ve ilgili) meta etiketlerini ekleyin.",
+  "İçerik derinliği (AI için)": "İçeriği 600+ kelimeye çıkararak AI motorlarının alıntılayabileceği derinlik sağlayın.",
+  "Yinelenen başlıklar (title)": "Aynı başlığı taşıyan sayfalara benzersiz title verin.",
+  "Yinelenen meta açıklamalar": "Aynı meta açıklamayı taşıyan sayfalara benzersiz açıklama yazın.",
+  "Eksik başlık": "Başlığı olmayan sayfalara title etiketi ekleyin.",
+  "Eksik meta açıklama": "Meta açıklaması olmayan sayfalara ekleyin.",
+  "Performans skoru (Lighthouse)": "Aşağıdaki hız fırsatlarını uygulayın: kullanılmayan JS/CSS, görsel optimizasyonu, render-blocking.",
+  "LCP": "En büyük içerik ögesini hızlandırın: görsel optimizasyonu, sunucu yanıtı, render-blocking kaldırma.",
+  "CLS": "Görsel/reklam alanlarına sabit boyut verin; geç yüklenen içeriğin sayfayı kaydırmasını önleyin.",
+  "FCP": "Kritik CSS'i satır içi yapın, render-blocking kaynakları azaltın.",
+  "TBT": "Uzun JavaScript görevlerini bölün, kullanılmayan JS'i kaldırın.",
+  "Speed Index": "Sayfanın görünür kısmının daha erken çizilmesini sağlayın.",
+};
 export interface CheckGroup {
   id: string;
   title: string;
@@ -458,6 +507,9 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   ];
   const groups: CheckGroup[] = [...crawlRes.groups, { id: "perf", title: "Performans (hız)", checks: perfChecks }];
   if (siteGroup) groups.push(siteGroup);
+
+  // Her kontrole "öneri / nasıl düzeltilir" metnini bağla
+  for (const g of groups) g.checks = g.checks.map((c) => ({ ...c, fix: c.fix ?? FIX[c.label] }));
 
   // Sağlık skoru: tüm kontrollerden ağırlıklı
   const all = groups.flatMap((g) => g.checks);

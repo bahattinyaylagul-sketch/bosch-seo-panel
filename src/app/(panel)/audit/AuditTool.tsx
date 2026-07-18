@@ -104,6 +104,7 @@ function CheckRow({ c }: { c: Check }) {
           <div className="text-xs text-ink-body break-words">{c.detail}</div>
         </div>
         {urls.length > 0 && <span className="text-[11px] text-ink-body bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{urls.length} sayfa</span>}
+        {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">girilen sayfa</span>}
         <SevBadge status={c.status} />
         <span className="text-ink-body/50 text-xs w-4 text-center">{open ? "▾" : "▸"}</span>
       </button>
@@ -565,13 +566,9 @@ export default function AuditTool() {
           {res.groups.map((g, gi) => (
             <div key={g.id}>
               {filter === "all" && g.id === "images" && res.imagesList && <ImagesTable list={res.imagesList} />}
-              {filter === "all" && g.id === "onpage" && res.linksList && res.linksList.length > 0 && <LinksTable list={res.linksList} />}
               <GroupCard group={g} filter={filter} refCb={(el) => (groupRefs.current[g.id] = el)} />
             </div>
           ))}
-
-          {/* ── SOSYAL ÖNİZLEME ── */}
-          {filter === "all" && res.social && <SocialPreview social={res.social} url={res.finalUrl} />}
 
           {/* ── AI / GEO ── */}
           {res.ai && filter === "all" && (

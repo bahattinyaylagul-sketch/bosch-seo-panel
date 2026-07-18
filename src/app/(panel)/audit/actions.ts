@@ -18,6 +18,7 @@ export interface Check {
   fix?: string;
   urls?: string[]; // etkilenen sayfalar
   info?: boolean;  // bilgi satırı — skora girmez
+  scope?: "site";  // site geneli kontrol (yoksa girilen sayfa)
 }
 export interface CheckGroup {
   id: string;
@@ -373,10 +374,10 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
 }
 // ── Site geneli check üretici ──────────────────────────────────────────────
 function siteCheck(label: string, bad: string[], failOver: number, okMsg: string, badMsg: (n: number) => string, fix: string): Check {
-  if (bad.length === 0) return { label, status: "pass", detail: okMsg, fix };
+  if (bad.length === 0) return { label, status: "pass", detail: okMsg, fix, scope: "site" };
   const capped = bad.slice(0, URL_CAP);
   const capNote = bad.length > URL_CAP ? ` (ilk ${URL_CAP} listelendi)` : "";
-  return { label, status: bad.length > failOver ? "fail" : "warn", detail: badMsg(bad.length) + capNote, urls: capped, fix };
+  return { label, status: bad.length > failOver ? "fail" : "warn", detail: badMsg(bad.length) + capNote, urls: capped, fix, scope: "site" };
 }
 // ── v3 çıkarım yardımcıları ────────────────────────────────────────────────
 async function runPool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -634,28 +635,31 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
       : { label: "Canonical etiketi", status: "warn", detail: "Yok — yinelenen içerik riski" });
   }
   // ═══ SAYFA İÇİ SEO ═══
-  // Girilen sayfa detayı
-  onpage.push(page.title
-    ? { label: "Sayfa başlığı (title)", status: page.title.length >= 10 && page.title.length <= 60 ? "pass" : "warn", detail: `${page.title.length} karakter${page.title.length > 60 ? " (çok uzun, kesilebilir)" : page.title.length < 10 ? " (çok kısa)" : ""} — "${page.title.slice(0, 55)}"` }
-    : { label: "Sayfa başlığı (title)", status: "fail", detail: "Başlık etiketi yok" });
-  onpage.push(page.desc
-    ? { label: "Meta açıklama", status: page.desc.length >= 50 && page.desc.length <= 160 ? "pass" : "warn", detail: `${page.desc.length} karakter (ideal 50–160)` }
-    : { label: "Meta açıklama", status: "fail", detail: "Meta description yok" });
   const h1 = count(/<h1[\s>]/gi);
-  onpage.push(h1 === 1
-    ? { label: "H1 başlığı", status: "pass", detail: "Tek H1 (ideal)" }
-    : h1 === 0
-      ? { label: "H1 başlığı", status: "fail", detail: "Ham HTML'de H1 yok — AI crawler'lar (GPTBot, ClaudeBot) sayfayı başlıksız görür" }
-      : { label: "H1 başlığı", status: "warn", detail: `${h1} adet H1 (tek olmalı)` });
   const h2 = count(/<h2[\s>]/gi);
+  // Girilen sayfa detayları — YALNIZCA site geneli tarama YOKSA göster (aksi halde
+  // "H1 başlığı" + "Eksik H1 (site geneli)" gibi kafa karıştırıcı ikili oluşuyor)
+  if (!sitewide) {
+    onpage.push(page.title
+      ? { label: "Sayfa başlığı (title)", status: page.title.length >= 10 && page.title.length <= 60 ? "pass" : "warn", detail: `${page.title.length} karakter${page.title.length > 60 ? " (çok uzun, kesilebilir)" : page.title.length < 10 ? " (çok kısa)" : ""} — "${page.title.slice(0, 55)}"` }
+      : { label: "Sayfa başlığı (title)", status: "fail", detail: "Başlık etiketi yok" });
+    onpage.push(page.desc
+      ? { label: "Meta açıklama", status: page.desc.length >= 50 && page.desc.length <= 160 ? "pass" : "warn", detail: `${page.desc.length} karakter (ideal 50–160)` }
+      : { label: "Meta açıklama", status: "fail", detail: "Meta description yok" });
+    onpage.push(h1 === 1
+      ? { label: "H1 başlığı", status: "pass", detail: "Tek H1 (ideal)" }
+      : h1 === 0
+        ? { label: "H1 başlığı", status: "fail", detail: "Ham HTML'de H1 yok — AI crawler'lar (GPTBot, ClaudeBot) sayfayı başlıksız görür" }
+        : { label: "H1 başlığı", status: "warn", detail: `${h1} adet H1 (tek olmalı)` });
+    onpage.push(page.words >= 300
+      ? { label: "İçerik uzunluğu", status: "pass", detail: `~${page.words} kelime` }
+      : page.words >= 100
+        ? { label: "İçerik uzunluğu", status: "warn", detail: `~${page.words} kelime (zayıf içerik)` }
+        : { label: "İçerik uzunluğu", status: "fail", detail: `~${page.words} kelime (çok az)` });
+  }
   onpage.push(h2 > 0
-    ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2` }
-    : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok" });
-  onpage.push(page.words >= 300
-    ? { label: "İçerik uzunluğu", status: "pass", detail: `~${page.words} kelime` }
-    : page.words >= 100
-      ? { label: "İçerik uzunluğu", status: "warn", detail: `~${page.words} kelime (zayıf içerik)` }
-      : { label: "İçerik uzunluğu", status: "fail", detail: `~${page.words} kelime (çok az)` });
+    ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2 (girilen sayfa)` }
+    : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok (girilen sayfa)" });
   const hrefs = Array.from(html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)).map((m) => m[1]);
   let internal = 0, external = 0;
   for (const href of hrefs) {

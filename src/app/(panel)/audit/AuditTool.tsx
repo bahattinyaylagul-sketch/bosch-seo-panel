@@ -1,9 +1,58 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { auditSite, type AuditData, type Check, type CheckGroup, type CheckStatus } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { useT } from "@/components/LangProvider";
+
+const LOADER_STEPS = [
+  "Sayfa çekiliyor ve ayrıştırılıyor",
+  "Hız ölçülüyor (Google Lighthouse)",
+  "Teknik SEO, görseller ve GEO denetleniyor",
+  "Site geneli taranıyor (sitemap URL'leri)",
+  "AI ile içerik & GEO analizi yapılıyor",
+];
+
+function AuditLoader() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setI((p) => Math.min(p + 1, LOADER_STEPS.length - 1)), 4000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="border border-surface-border rounded-bosch p-6 max-w-xl">
+      <div className="flex items-center gap-4 mb-5">
+        <div className="h-9 w-9 rounded-full border-[3px] border-surface-border border-t-bosch-red animate-spin" />
+        <div>
+          <div className="text-sm font-semibold text-ink">Analiz ediliyor…</div>
+          <div className="text-xs text-ink-body">Sayfa + site geneli taranıyor, hız · SEO · GEO denetleniyor.</div>
+        </div>
+      </div>
+      <div className="h-1.5 w-full rounded-bosch overflow-hidden bg-surface-border mb-5 relative">
+        <div
+          className="absolute inset-y-0 bosch-shimmer"
+          style={{ width: "40%", background: "linear-gradient(90deg,#E2001A,#ED0007,#B90276,#50237F,#007BC0,#00A8B0,#78BE20)" }}
+        />
+      </div>
+      <ul className="space-y-2.5">
+        {LOADER_STEPS.map((s, idx) => (
+          <li key={idx} className="flex items-center gap-3 text-sm">
+            {idx < i ? (
+              <span className="h-4 w-4 rounded-full bg-bosch-green text-white flex items-center justify-center text-[10px] shrink-0">✓</span>
+            ) : idx === i ? (
+              <span className="h-4 w-4 rounded-full border-2 border-surface-border border-t-bosch-blue animate-spin shrink-0" />
+            ) : (
+              <span className="h-4 w-4 rounded-full border border-surface-border shrink-0" />
+            )}
+            <span className={idx <= i ? "text-ink" : "text-ink-body/50"}>{s}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-ink-body/70 mt-4">Büyük sitelerde tarama 1-3 dakika sürebilir; sekmeyi kapatma.</p>
+      <style>{`@keyframes boschshim{0%{left:-40%}100%{left:100%}} .bosch-shimmer{animation:boschshim 1.5s linear infinite}`}</style>
+    </div>
+  );
+}
 
 type Filter = "all" | "fail" | "warn" | "pass";
 

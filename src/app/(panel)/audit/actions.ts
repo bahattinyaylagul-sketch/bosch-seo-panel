@@ -444,14 +444,6 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
     const extractLocs = (xml: string) =>
       Array.from(xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)).map((m) => m[1].trim()).filter((u) => /^https?:\/\//i.test(u));
 
-    // sitemap konumu (robots.txt → yoksa /sitemap.xml)
-    let sitemapUrl = origin + "/sitemap.xml";
-    const robots = await safeFetchText(origin + "/robots.txt", 6000);
-    const sm = robots.text.match(/sitemap:\s*(\S+)/i);
-    if (sm) sitemapUrl = sm[1].trim();
-    const root = await safeFetchText(sitemapUrl, 9000);
-    if (!root.ok) return null;
-
     // kapsam: girilen URL'nin ilk yol segmenti (örn. /tr) — sadece o dil/ülke
     let prefix = "";
     let country = "";
@@ -463,6 +455,20 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<CheckGroup |
       if (!prefix) return true;
       try { const p = new URL(u).pathname; return p === prefix || p.startsWith(prefix + "/"); } catch { return false; }
     };
+
+    // robots.txt'teki TÜM sitemap'ler → kapsamla eşleşeni seç (Bosch her ülke için ayrı sitemap listeler)
+    const robots = await safeFetchText(origin + "/robots.txt", 6000);
+    const sitemaps = Array.from(robots.text.matchAll(/sitemap:\s*(\S+)/gi)).map((m) => m[1].trim());
+    let sitemapUrl = origin + "/sitemap.xml";
+    if (prefix) {
+      const byPath = sitemaps.find((s) => { try { return new URL(s).pathname.startsWith(prefix + "/"); } catch { return false; } });
+      const byToken = sitemaps.find((s) => new RegExp(`[/_.\\-]${country}([/_.\\-]|$)`, "i").test(s));
+      sitemapUrl = byPath || byToken || sitemaps[0] || sitemapUrl;
+    } else if (sitemaps[0]) {
+      sitemapUrl = sitemaps[0];
+    }
+    const root = await safeFetchText(sitemapUrl, 9000);
+    if (!root.ok) return null;
 
     // sitemap index ise alt-sitemap'leri gez — kapsamdaki (örn. TR) alt-sitemap'leri öne al
     let urls: string[] = [];

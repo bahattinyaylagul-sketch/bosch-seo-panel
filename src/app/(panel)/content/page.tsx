@@ -20,7 +20,7 @@ export default async function ContentListPage({
   const { data: markets = [] } = await supabase
     .from("markets")
     .select("*")
-    .in("code", ["tr", "en", "de"])
+    .in("code", ["TR", "EN", "DE"])
     .order("sort_order");
   const targetMarkets = (markets as Market[]).filter((m) => !m.is_source);
 

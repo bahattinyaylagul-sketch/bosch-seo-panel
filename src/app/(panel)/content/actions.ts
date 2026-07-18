@@ -46,7 +46,7 @@ export async function createContent(formData: FormData) {
     .from("markets")
     .select("id")
     .eq("is_source", false)
-    .in("code", ["tr", "en", "de"]);
+    .in("code", ["TR", "EN", "DE"]);
   if (markets?.length) {
     await supabase.from("content_translations").insert(
       markets.map((m: { id: string }) => ({

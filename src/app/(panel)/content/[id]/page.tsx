@@ -21,7 +21,7 @@ export default async function ContentDetailPage({ params }: { params: { id: stri
     .single<Content>();
   if (!content) notFound();
 
-  const { data: markets = [] } = await supabase.from("markets").select("*").in("code", ["tr", "en", "de"]).order("sort_order");
+  const { data: markets = [] } = await supabase.from("markets").select("*").in("code", ["TR", "EN", "DE"]).order("sort_order");
   const targetMarkets = (markets as Market[]).filter((m) => !m.is_source);
 
   // RLS sayesinde market_manager yalnızca kendi pazarının çevirisini görür.

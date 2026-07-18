@@ -15,7 +15,8 @@ export async function getMarkets(): Promise<MarketRow[]> {
   const { data } = await supabase.from("markets").select("id,code,name").in("code", [...ACTIVE_MARKET_CODES]).order("code", { ascending: true });
   const rows = (data ?? []) as MarketRow[];
   // TR'yi başa al (varsayılan seçili gelsin)
-  return rows.sort((a, b) => (a.code === "tr" ? -1 : b.code === "tr" ? 1 : a.code.localeCompare(b.code)));
+  const isTr = (c: string) => c.toUpperCase() === "TR";
+  return rows.sort((a, b) => (isTr(a.code) ? -1 : isTr(b.code) ? 1 : a.code.localeCompare(b.code)));
 }
 
 export async function getTaskStatuses(marketId: string): Promise<Record<string, TaskState>> {

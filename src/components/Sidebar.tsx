@@ -30,6 +30,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/keywords", labelKey: "nav.keywords", roles: ["admin", "market_manager"], soon: true },
       { href: "/audit", labelKey: "nav.audit", roles: ["admin", "market_manager"] },
+      { href: "/geo-checklist", labelKey: "nav.geochecklist", roles: ["admin", "market_manager", "viewer"] },
       { href: "/backlinks", labelKey: "nav.backlinks", roles: ["admin", "market_manager"], soon: true },
     ],
   },

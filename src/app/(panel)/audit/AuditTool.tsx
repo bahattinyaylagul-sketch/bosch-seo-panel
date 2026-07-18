@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useTransition } from "react";
 import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
+import { getMarkets, addCustomTasks, type MarketRow } from "../geo-checklist/actions";
 import { useT } from "@/components/LangProvider";
 
 const GREEN = "#00884A";
@@ -579,6 +580,40 @@ function SiteTracker({ onReport }: { onReport: (d: AuditData, meta?: { diff?: Sc
   );
 }
 
+// Denetim sorunlarını GEO Checklist'e aktar
+function ExportToChecklist({ data }: { data: AuditData }) {
+  const [markets, setMarkets] = useState<MarketRow[] | null>(null);
+  const [marketId, setMarketId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => { getMarkets().then((m) => { setMarkets(m); setMarketId(m[0]?.id ?? ""); }).catch(() => setMarkets([])); }, []);
+  const items = useMemo(() => {
+    const out: { title: string; descr: string; priority: string }[] = [];
+    data.groups.forEach((g) => g.checks.forEach((c) => {
+      if (c.info || c.status === "pass") return;
+      out.push({ title: c.label, descr: c.detail + (c.fix ? " — Öneri: " + c.fix : ""), priority: c.status === "fail" ? "critical" : "high" });
+    }));
+    return out;
+  }, [data]);
+  async function run() {
+    setBusy(true); setMsg(null);
+    try { const r = await addCustomTasks(marketId, items); setMsg(r.ok ? `${r.count} sorun GEO Checklist'e eklendi ✓` : (r.error || "Hata")); }
+    catch { setMsg("Aktarım hatası"); }
+    finally { setBusy(false); }
+  }
+  if (!markets || markets.length === 0) return null;
+  return (
+    <div className="border border-surface-border rounded-bosch p-3 mb-6 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-ink-body">Bu denetimin {items.length} sorununu GEO Checklist'e aktar:</span>
+      <select value={marketId} onChange={(e) => setMarketId(e.target.value)} className="rounded-bosch border border-surface-border bg-white px-2 py-1.5 text-xs text-ink outline-none">
+        {markets.map((m) => <option key={m.id} value={m.id}>{m.code.toUpperCase()} · {m.name}</option>)}
+      </select>
+      <button onClick={run} disabled={busy || items.length === 0} className="rounded-bosch bg-bosch-blue px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60">{busy ? "Aktarılıyor…" : "Aktar"}</button>
+      {msg && <span className="text-xs text-bosch-green">{msg}</span>}
+    </div>
+  );
+}
+
 export default function AuditTool() {
   const t = useT();
   const [url, setUrl] = useState("");
@@ -695,6 +730,8 @@ export default function AuditTool() {
               ) : <span className="text-ink-body">İlk tarama kaydedildi — sonraki taramada karşılaştırma çıkacak.</span>}
             </div>
           )}
+          {filter === "all" && <ExportToChecklist data={res} />}
+
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             <div className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center">

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getProfile } from "@/lib/auth";
 import type { TaskStatus } from "@/lib/geo-checklist";
+import { ACTIVE_MARKET_CODES } from "@/lib/markets";
 
 export interface MarketRow { id: string; code: string; name: string }
 export interface TaskState { status: TaskStatus; note: string | null }
@@ -11,8 +12,10 @@ export async function getMarkets(): Promise<MarketRow[]> {
   const profile = await getProfile();
   if (!profile) return [];
   const supabase = createClient();
-  const { data } = await supabase.from("markets").select("id,code,name").order("code", { ascending: true });
-  return (data ?? []) as MarketRow[];
+  const { data } = await supabase.from("markets").select("id,code,name").in("code", [...ACTIVE_MARKET_CODES]).order("code", { ascending: true });
+  const rows = (data ?? []) as MarketRow[];
+  // TR'yi başa al (varsayılan seçili gelsin)
+  return rows.sort((a, b) => (a.code === "tr" ? -1 : b.code === "tr" ? 1 : a.code.localeCompare(b.code)));
 }
 
 export async function getTaskStatuses(marketId: string): Promise<Record<string, TaskState>> {

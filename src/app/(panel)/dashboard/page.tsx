@@ -28,7 +28,7 @@ function Bar({ value }: { value: number }) {
 
 export default async function DashboardPage() {
   const supabase = createClient();
-  const { data: markets = [] } = await supabase.from("markets").select("*").order("sort_order");
+  const { data: markets = [] } = await supabase.from("markets").select("*").in("code", ["tr", "en", "de"]).order("sort_order");
   const { data: contents = [] } = await supabase.from("contents").select("id");
   const { data: translations = [] } = await supabase.from("content_translations").select("*");
 

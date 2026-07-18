@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ExecutionPage() {
   const profile = await getProfile();
   const supabase = createClient();
-  const { data: markets = [] } = await supabase.from("markets").select("*").order("sort_order");
+  const { data: markets = [] } = await supabase.from("markets").select("*").in("code", ["tr", "en", "de"]).order("sort_order");
   const { data: executions = [] } = await supabase
     .from("executions")
     .select("*")

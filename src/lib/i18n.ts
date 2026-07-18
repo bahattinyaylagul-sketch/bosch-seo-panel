@@ -1,6 +1,8 @@
 // Panel arayüz dilleri (içerik verisi değil, UI metinleri)
 export const LOCALES = ["tr", "en", "de", "fr", "es"] as const;
 export type Locale = (typeof LOCALES)[number];
+// Arayüzde gösterilecek etkin diller (fr/es sözlükte tutuluyor ama gösterilmiyor)
+export const ENABLED_LOCALES: readonly Locale[] = ["tr", "en", "de"];
 export const DEFAULT_LOCALE: Locale = "tr";
 export const LOCALE_COOKIE = "panel_lang";
 

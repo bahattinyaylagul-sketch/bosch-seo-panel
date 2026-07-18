@@ -65,30 +65,30 @@ function HalfGauge({ value, hex }: { value: number; hex: string }) {
   const circ = Math.PI * 52;
   const off = circ * (1 - Math.max(0, Math.min(100, value)) / 100);
   return (
-    <div className="relative" style={{ width: 130, height: 76 }}>
-      <svg width={130} height={76} viewBox="0 0 120 70">
+    <div className="relative" style={{ width: 200, height: 118 }}>
+      <svg width={200} height={118} viewBox="0 0 120 70">
         <path d="M8 62 A52 52 0 0 1 112 62" fill="none" stroke="#E8EAED" strokeWidth="11" strokeLinecap="round" />
         <path d="M8 62 A52 52 0 0 1 112 62" fill="none" stroke={hex} strokeWidth="11" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} />
       </svg>
-      <div className="absolute inset-0 flex items-end justify-center pb-1">
-        <span className="text-2xl font-semibold" style={{ color: hex }}>{value}%</span>
+      <div className="absolute inset-0 flex items-end justify-center pb-2">
+        <span className="text-4xl font-semibold" style={{ color: hex }}>{value}%</span>
       </div>
     </div>
   );
 }
 
 function BigStat({ label, value, hex, sub, active, onClick }: { label: string; value: number; hex: string; sub?: string; active?: boolean; onClick?: () => void }) {
-  const cls = "rounded-bosch border p-4 text-left transition-all";
+  const cls = "rounded-bosch border p-6 min-h-[168px] flex flex-col items-center justify-center text-center transition-all";
   const inner = (
     <>
-      <div className="text-xs text-ink-body mb-1">{label}</div>
-      <div className="text-3xl font-semibold leading-none" style={{ color: hex }}>{value}</div>
-      {sub && <div className="text-[11px] text-ink-body/70 mt-1.5">{sub}</div>}
+      <div className="text-sm text-ink-body mb-1">{label}</div>
+      <div className="text-6xl font-semibold leading-none" style={{ color: hex }}>{value}</div>
+      {sub && <div className="text-xs text-ink-body/70 mt-2">{sub}</div>}
     </>
   );
   if (!onClick) return <div className={`${cls} border-surface-border`}>{inner}</div>;
   return (
-    <button onClick={onClick} className={`${cls} ${active ? "ring-2 ring-offset-1" : "hover:bg-surface-muted"}`}
+    <button onClick={onClick} className={`${cls} w-full ${active ? "ring-2 ring-offset-1" : "hover:bg-surface-muted"}`}
       style={{ borderColor: active ? hex : "#E0E2E5", ...(active ? ({ ["--tw-ring-color" as any]: hex }) : {}) }}>
       {inner}
     </button>
@@ -602,14 +602,14 @@ function ExportToChecklist({ data }: { data: AuditData }) {
   }, [data]);
   async function run() {
     setBusy(true); setMsg(null);
-    try { const r = await addCustomTasks(marketId, items); setMsg(r.ok ? `${r.count} sorun GEO Checklist'e eklendi ✓` : (r.error || "Hata")); }
+    try { const r = await addCustomTasks(marketId, items); setMsg(r.ok ? `${r.count} sorun görev takibine eklendi ✓` : (r.error || "Hata")); }
     catch { setMsg("Aktarım hatası"); }
     finally { setBusy(false); }
   }
   if (!markets || markets.length === 0) return null;
   return (
     <div className="border border-surface-border rounded-bosch p-3 mb-6 flex flex-wrap items-center gap-2">
-      <span className="text-xs text-ink-body">Bu denetimin {items.length} sorununu GEO Checklist'e aktar:</span>
+      <span className="text-xs text-ink-body">Bu denetimin {items.length} sorununu görev takibine aktar:</span>
       <select value={marketId} onChange={(e) => setMarketId(e.target.value)} className="rounded-bosch border border-surface-border bg-white px-2 py-1.5 text-xs text-ink outline-none">
         {markets.map((m) => <option key={m.id} value={m.id}>{m.code.toUpperCase()} · {m.name}</option>)}
       </select>
@@ -739,10 +739,10 @@ export default function AuditTool() {
 
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-            <div className="border border-surface-border rounded-bosch p-4 flex flex-col items-center justify-center">
-              <div className="text-xs font-semibold text-ink self-start mb-1">Site Sağlığı</div>
+            <div className="border border-surface-border rounded-bosch p-6 min-h-[168px] flex flex-col items-center justify-center text-center">
+              <div className="text-sm font-semibold text-ink mb-1">Site Sağlığı</div>
               <HalfGauge value={res.health} hex={healthHex(res.health)} />
-              <div className="text-[11px] text-ink-body mt-0.5">Hedef: 90+</div>
+              <div className="text-xs text-ink-body mt-1">Hedef: 90+</div>
             </div>
             <BigStat label="Hata" value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
             <BigStat label="Uyarı" value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />

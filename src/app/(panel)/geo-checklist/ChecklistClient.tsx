@@ -85,7 +85,7 @@ export default function ChecklistClient({ markets }: { markets: MarketRow[] }) {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <div className="border border-surface-border rounded-bosch p-4 flex items-center gap-3">
           <Ring value={stats.pct} />
-          <div><div className="text-xs text-ink-body">Genel GEO Skoru</div><div className="text-[11px] text-ink-body/70">{stats.earned} / {stats.total} puan</div></div>
+          <div><div className="text-xs text-ink-body">Genel İlerleme</div><div className="text-[11px] text-ink-body/70 cursor-help" title="Her görev önceliğine göre puan taşır: Kritik 10, Yüksek 8, Orta 6, Düşük 4. Toplam puan = tüm görevlerin puan toplamı. Kazanılan = Tamamlandı tam puan + Devam Ediyor yarım puan.">{stats.earned} / {stats.total} puan ⓘ</div></div>
         </div>
         <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Toplam Görev</div><div className="text-3xl font-semibold text-ink">{stats.count}</div></div>
         <div className="border border-surface-border rounded-bosch p-4"><div className="text-xs text-ink-body mb-1">Tamamlanan</div><div className="text-3xl font-semibold text-bosch-green">{stats.done}</div></div>

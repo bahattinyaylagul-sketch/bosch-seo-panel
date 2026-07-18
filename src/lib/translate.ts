@@ -103,6 +103,30 @@ export async function translateDoc(
   return { title: parsed.title ?? "", body: parsed.body ?? "" };
 }
 
+// Serbest metin çevirisi (Makale/Metin çevir modülü) — kaynak dil otomatik algılanır.
+export async function translateText(text: string, targetLocale: string, targetName: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY tanımlı değil.");
+  const client = new Anthropic({ apiKey });
+  const system = [
+    "Sen profesyonel bir çevirmensin.",
+    `Kullanıcının verdiği metni ${targetName} (${targetLocale}) diline çevir.`,
+    "Kaynak dili otomatik algıla. Anlamı ve tonu koru; markdown/biçimlendirmeyi koru.",
+    "SADECE çeviriyi döndür; açıklama, ön söz veya not ekleme.",
+  ].join("\n");
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system,
+    messages: [{ role: "user", content: text }],
+  });
+  return msg.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+}
+
 function parseJsonLooseRaw(text: string): Record<string, string> {
   let raw = text.trim();
   // Olası ```json ... ``` çitlerini temizle

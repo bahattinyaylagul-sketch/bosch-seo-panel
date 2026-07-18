@@ -34,6 +34,15 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    sec: "sec.advanced",
+    items: [
+      { href: "/architecture", labelKey: "nav.architecture", roles: ["admin", "market_manager"], soon: true },
+      { href: "/topical", labelKey: "nav.topical", roles: ["admin", "market_manager"], soon: true },
+      { href: "/competitor", labelKey: "nav.competitor", roles: ["admin", "market_manager"], soon: true },
+      { href: "/search-console", labelKey: "nav.gsc", roles: ["admin", "market_manager"], soon: true },
+    ],
+  },
+  {
     sec: "sec.track",
     items: [
       { href: "/execution", labelKey: "nav.execution", roles: ["admin", "market_manager"] },

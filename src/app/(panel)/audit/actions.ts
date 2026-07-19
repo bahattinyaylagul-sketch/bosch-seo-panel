@@ -946,18 +946,88 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     tech.push(siteCheck("URL hijyeni (site geneli)", badUrls, 10,
       "URL yapıları temiz", (n) => `${n} URL uzun/büyük harf/underscore/derin`, FIX["URL hijyeni (site geneli)"]!));
   }
+  // ═══ GÜVENLİK (Seoyen: HTTPS & Güvenlik) ═══
+  const security: Check[] = [];
+  const isHttps = page.finalUrl.startsWith("https://");
+  const mixed = isHttps ? Array.from(new Set((html.match(/(?:src|href)=["']http:\/\/[^"']+/gi) || [])
+    .map((s) => s.replace(/^[^"']*["']/, "")).filter((u) => !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(u)))) : [];
+  security.push(mixed.length > 0
+    ? { label: "Karışık içerik (mixed content)", status: "warn", detail: `${mixed.length} kaynak http:// ile yükleniyor (HTTPS sayfada)`, urls: mixed.slice(0, URL_CAP), fix: "Tüm görsel/script/stil kaynaklarını https:// ile yükleyin; tarayıcı aksi halde engelleyebilir." }
+    : { label: "Karışık içerik (mixed content)", status: "pass", detail: isHttps ? "Karışık içerik yok" : "Site HTTPS değil" });
+  security.push(h("content-security-policy")
+    ? { label: "Content-Security-Policy (CSP)", status: "pass", detail: "Tanımlı" }
+    : { label: "Content-Security-Policy (CSP)", status: "warn", detail: "Yok — XSS/enjeksiyon koruması zayıf", fix: "Content-Security-Policy başlığı ekleyin." });
+  security.push(h("x-frame-options") || /frame-ancestors/i.test(h("content-security-policy") || "")
+    ? { label: "Clickjacking koruması (X-Frame-Options)", status: "pass", detail: h("x-frame-options") || "CSP frame-ancestors" }
+    : { label: "Clickjacking koruması (X-Frame-Options)", status: "warn", detail: "Yok — sayfa iframe'e gömülebilir", fix: "X-Frame-Options: SAMEORIGIN veya CSP frame-ancestors ekleyin." });
+  security.push(h("referrer-policy")
+    ? { label: "Referrer-Policy", status: "pass", detail: h("referrer-policy")! }
+    : { label: "Referrer-Policy", status: "warn", info: true, detail: "Tanımsız" });
+
+  // ═══ ERİŞİLEBİLİRLİK (Seoyen: Erişilebilirlik) ═══
+  const access: Check[] = [];
+  access.push(has(/<html[^>]+\blang=/i)
+    ? { label: "Dil etiketi (html lang)", status: "pass", detail: "Tanımlı" }
+    : { label: "Dil etiketi (html lang)", status: "warn", detail: "Tanımsız — ekran okuyucular dili bilemez", fix: "<html lang=\"tr\"> ekleyin." });
+  const inputCount = count(/<input\b(?![^>]*type=["'](?:hidden|submit|button|image|reset)["'])[^>]*>/gi) + count(/<textarea\b/gi) + count(/<select\b/gi);
+  const labeledApprox = count(/\baria-label=|\baria-labelledby=|<label\b/gi);
+  access.push(inputCount === 0
+    ? { label: "Form etiketleri", status: "pass", info: true, detail: "Etkileşimli form alanı yok" }
+    : labeledApprox >= inputCount
+      ? { label: "Form etiketleri", status: "pass", detail: `${inputCount} form alanı etiketli görünüyor` }
+      : { label: "Form etiketleri", status: "warn", detail: `${inputCount} form alanı var, ${labeledApprox} label/aria-label tespit edildi — bazıları etiketsiz olabilir`, fix: "Her input/select/textarea için <label> veya aria-label ekleyin." });
+  access.push(has(/<main\b|<nav\b|role=["'](?:main|navigation|banner|contentinfo)["']/i)
+    ? { label: "Semantik bölümler / ARIA landmark", status: "pass", detail: "main/nav/landmark mevcut" }
+    : { label: "Semantik bölümler / ARIA landmark", status: "warn", detail: "Semantik bölüm (main/nav/header/footer) yok", fix: "İçeriği <header>, <nav>, <main>, <footer> ile sarın." });
+  const emptyLinks = (html.match(/<a\b[^>]*>\s*(?:<[^>]+>\s*)*<\/a>/gi) || []).filter((a) => !/aria-label=/i.test(a) && !/<img[^>]+alt=["'][^"']+["']/i.test(a)).length;
+  access.push(emptyLinks > 0
+    ? { label: "Boş bağlantı metni", status: "warn", detail: `${emptyLinks} bağlantının erişilebilir metni yok — ekran okuyucular okuyamaz`, fix: "Bağlantıya görünür metin, aria-label veya alt'lı görsel ekleyin." }
+    : { label: "Boş bağlantı metni", status: "pass", detail: "Bağlantı metinleri erişilebilir" });
+  const imgNoAltPage = count(/<img(?![^>]*\balt=)[^>]*>/gi);
+  access.push(imgNoAltPage === 0
+    ? { label: "Görsel alt metni (erişilebilirlik)", status: "pass", detail: "Tüm görsellerde alt var (girilen sayfa)" }
+    : { label: "Görsel alt metni (erişilebilirlik)", status: "warn", detail: `${imgNoAltPage} görselde alt eksik (girilen sayfa)`, fix: "Bilgi taşıyan görsellere alt, dekoratiflere alt=\"\" ekleyin." });
+
+  // ═══ SITEMAP (Seoyen: Sitemap) ═══
+  const sitemapChecks: Check[] = [];
+  if (site) {
+    sitemapChecks.push({ label: "Sitemap bulundu ve tarandı", status: "pass", detail: `Sitemap üzerinden ${N} URL keşfedildi` });
+    const redir = P.filter((p) => p.redirected).length;
+    sitemapChecks.push(redir === 0
+      ? { label: "Sitemap URL geçerliliği", status: "pass", detail: "Sitemap URL'leri doğrudan yanıt veriyor" }
+      : { label: "Sitemap URL geçerliliği", status: redir > Math.floor(N / 10) ? "warn" : "pass", detail: `${redir} URL yönleniyor (301/302)`, fix: "Sitemap'te nihai URL'leri listeleyin." });
+  } else {
+    sitemapChecks.push({ label: "Sitemap", status: "warn", info: true, detail: "Sitemap üzerinden çoklu sayfa taranamadı (tek sayfa modu veya sitemap yok)" });
+  }
+
+  // ═══ JS & CSS (Seoyen: JavaScript ve CSS) ═══
+  const jscss: Check[] = [];
+  const scriptCount = count(/<script\b[^>]*\bsrc=/gi);
+  const inlineScript = count(/<script\b(?![^>]*\bsrc=)[^>]*>/gi);
+  const cssCount = count(/<link[^>]+rel=["']stylesheet["']/gi);
+  jscss.push({ label: "Harici script sayısı", status: scriptCount > 20 ? "warn" : "pass", info: scriptCount <= 20, detail: `${scriptCount} harici <script>${scriptCount > 20 ? " (fazla — HTTP istekleri artıyor)" : ""}` });
+  jscss.push({ label: "Satır içi (inline) script", status: inlineScript > 15 ? "warn" : "pass", info: inlineScript <= 15, detail: `${inlineScript} inline <script>` });
+  jscss.push({ label: "Harici CSS sayısı", status: cssCount > 8 ? "warn" : "pass", info: cssCount <= 8, detail: `${cssCount} stylesheet${cssCount > 8 ? " (fazla — render-blocking riski)" : ""}` });
+  // Lighthouse fırsatlarından render-blocking / kullanılmayan kaynak sinyali
+  const rb = lh.opportunities.find((o) => /render-blocking|kullanılmayan|unused|minif/i.test(o.title));
+  if (rb) jscss.push({ label: "Render-blocking / kullanılmayan kaynaklar", status: "warn", detail: `${rb.title} — ${rb.value}`, fix: "Kritik olmayan JS/CSS'i erteleyin (defer/async), kullanılmayan kodu ayıklayın, minify edin." });
+
   // Grup içi sıralama: hata → uyarı → başarılı (info satırları en üstte kalır)
   const order: Record<CheckStatus, number> = { fail: 0, warn: 1, pass: 2 };
   const sortChecks = (arr: Check[]) => arr.sort((a, b) => (a.info ? -1 : b.info ? 1 : order[a.status] - order[b.status]));
   const groups: CheckGroup[] = [
     { id: "tech", title: `Teknik SEO & Taranabilirlik${scopeTag}`, checks: sortChecks(tech) },
+    { id: "security", title: `HTTPS & Güvenlik${scopeTag}`, checks: sortChecks(security) },
     { id: "onpage", title: `Sayfa İçi SEO${scopeTag}`, checks: sortChecks(onpage) },
+    { id: "access", title: `Erişilebilirlik${scopeTag}`, checks: sortChecks(access) },
     { id: "images", title: `Görseller${scopeTag}`, checks: sortChecks(images) },
     { id: "mobile", title: `Mobil Uyumluluk${scopeTag}`, checks: sortChecks(mobile) },
     { id: "geo", title: `GEO / Yapısal Veri${scopeTag}`, checks: sortChecks(geo) },
+    { id: "jscss", title: "JavaScript & CSS · girilen sayfa", checks: sortChecks(jscss) },
+    { id: "sitemap", title: `Sitemap${scopeTag}`, checks: sortChecks(sitemapChecks) },
     { id: "perf", title: "Performans (hız) · girilen sayfa", checks: sortChecks(perf) },
   ];
-  return groups;
+  return groups.filter((g) => g.checks.length > 0);
 }
 // ── Ana giriş noktası ──────────────────────────────────────────────────────
 export async function auditSite(rawUrl: string): Promise<AuditResponse> {

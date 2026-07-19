@@ -510,7 +510,9 @@ async function headInfo(u: string, ms: number, allowGet = false): Promise<{ stat
     } catch { clearTimeout(t); return null; }
   };
   let res = await doFetch("HEAD");
-  if (allowGet && (!res || res.status === 405 || res.status === 501)) {
+  // HEAD güvenilmez: birçok sunucu HEAD'e 404/405/403 döner ama GET'e 200.
+  // HEAD başarısız veya 4xx/5xx ise gerçek durumu GET ile doğrula.
+  if (allowGet && (!res || res.status == null || res.status >= 400)) {
     const g = await doFetch("GET");
     if (g) res = g;
   }
@@ -673,8 +675,10 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   }
   tech.push({ label: "HTTP durumu (girilen sayfa)", status: page.status >= 200 && page.status < 300 ? "pass" : "fail", detail: `${page.status}` });
   if (sitewide) {
-    tech.push(siteCheck("Erişilemeyen sayfalar (4xx/5xx)", of((p) => p.status === 0 || p.status >= 400), 0,
-      "Tüm sayfalar erişilebilir", (n) => `${n} sayfa hata döndürüyor veya yanıt vermiyor`,
+    // Yalnız gerçek HTTP hataları (404/410/5xx). status 0 = zaman aşımı/ağ (yanlış pozitif),
+    // 401/403/429/999 = bot engelleme — bunları "kırık" saymayız.
+    tech.push(siteCheck("Erişilemeyen sayfalar (4xx/5xx)", of((p) => p.status === 404 || p.status === 410 || p.status >= 500), 0,
+      "Tüm sayfalar erişilebilir", (n) => `${n} sayfa 404/410/5xx döndürüyor`,
       "Sitemap'te ölü URL bırakmayın; 404/500 dönen sayfaları düzeltin veya sitemap'ten çıkarın."));
     tech.push(siteCheck("Yönlendirilen sitemap URL'leri (3xx)", of((p) => p.redirected), Math.max(5, Math.floor(N / 10)),
       "Sitemap URL'leri doğrudan yanıt veriyor", (n) => `${n} sitemap URL'si başka adrese yönleniyor`,

@@ -646,7 +646,7 @@ export default function AuditTool() {
   const [translating, setTranslating] = useState(false);
   useEffect(() => {
     if (!res || locale === "tr") { setTmap({}); return; }
-    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük"];
+    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster"];
     const set = new Set<string>(FIXED);
     res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
     (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));
@@ -751,12 +751,12 @@ export default function AuditTool() {
         <div>
           {/* ── ÜST BAR ── */}
           <div className="flex items-center justify-between gap-4 mb-3">
-            <button onClick={() => { setRes(null); setReportMeta(null); }} className="text-sm text-bosch-blue hover:underline font-medium">← Sitelere dön</button>
-            <button onClick={() => exportCsv(res)} className="shrink-0 rounded-bosch border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted transition-colors whitespace-nowrap">⬇ CSV dışa aktar</button>
+            <button onClick={() => { setRes(null); setReportMeta(null); }} className="text-sm text-bosch-blue hover:underline font-medium">← {L("Sitelere dön")}</button>
+            <button onClick={() => exportCsv(res)} className="shrink-0 rounded-bosch border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-muted transition-colors whitespace-nowrap">⬇ {L("CSV dışa aktar")}</button>
           </div>
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <p className="text-xs text-ink-body break-all">{res.finalUrl}</p>
-            {reportMeta?.savedAt && <span className="shrink-0 rounded-bosch bg-surface-muted text-ink-body text-[11px] px-2 py-0.5">Kayıtlı rapor · {new Date(reportMeta.savedAt).toLocaleString("tr-TR")}</span>}
+            {reportMeta?.savedAt && <span className="shrink-0 rounded-bosch bg-surface-muted text-ink-body text-[11px] px-2 py-0.5">{L("Kayıtlı rapor")} · {new Date(reportMeta.savedAt).toLocaleString()}</span>}
           </div>
           {reportMeta?.diff && (
             <div className="rounded-bosch border border-surface-border bg-surface-muted p-3 mb-4 text-xs">
@@ -774,14 +774,14 @@ export default function AuditTool() {
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div className="border border-surface-border rounded-bosch p-6 min-h-[168px] flex flex-col items-center justify-center text-center">
-              <div className="text-sm font-semibold text-ink mb-1">Site Sağlığı</div>
+              <div className="text-sm font-semibold text-ink mb-1">{L("Site Sağlığı")}</div>
               <HalfGauge value={res.health} hex={healthHex(res.health)} />
-              <div className="text-xs text-ink-body mt-1">Hedef: 90+</div>
+              <div className="text-xs text-ink-body mt-1">{L("Hedef")}: 90+</div>
             </div>
-            <BigStat label="Hata" value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} URL etkilendi` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
-            <BigStat label="Uyarı" value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} URL etkilendi` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
+            <BigStat label={L("Hata")} value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} ${L("URL etkilendi")}` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
+            <BigStat label={L("Uyarı")} value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} ${L("URL etkilendi")}` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
           </div>
-          {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← Tümünü göster</button>}
+          {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← {L("Tümünü göster")}</button>}
 
 
           {/* ── SEO AKSİYON PLANI (AI) ── */}

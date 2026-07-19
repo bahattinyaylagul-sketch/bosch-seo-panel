@@ -646,7 +646,7 @@ export default function AuditTool() {
   const [translating, setTranslating] = useState(false);
   useEffect(() => {
     if (!res || locale === "tr") { setTmap({}); return; }
-    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster"];
+    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı"];
     const set = new Set<string>(FIXED);
     res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
     (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));
@@ -826,7 +826,7 @@ export default function AuditTool() {
           {/* ── AI / GEO analiz yapılamadıysa sebebi göster ── */}
           {!res.ai && res.aiError && filter === "all" && (
             <div className="mt-8 rounded-bosch border border-amber-300 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-ink mb-1">AI Görünürlük & GEO Analizi çalışmadı</div>
+              <div className="text-sm font-semibold text-ink mb-1">{L("AI Görünürlük & GEO Analizi çalışmadı")}</div>
               <p className="text-xs text-ink-body">{L(res.aiError)}</p>
             </div>
           )}

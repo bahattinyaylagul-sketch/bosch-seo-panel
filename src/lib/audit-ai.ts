@@ -112,7 +112,7 @@ export async function analyzeContentAI(input: {
     try {
       const msg = await client.messages.create({
         model: m,
-        max_tokens: 1600,
+        max_tokens: 4000,
         temperature: 0.2,
         system,
         messages: [{ role: "user", content: payload }],

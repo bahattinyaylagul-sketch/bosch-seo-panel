@@ -88,6 +88,15 @@ export async function setCustomTaskStatus(taskId: string, status: TaskStatus): P
   const supabase = createClient();
   const { error } = await supabase.from("geo_custom_task").update({ status }).eq("id", taskId);
   if (error) return { ok: false, error: error.message };
+  // Denetim tarafına yansıt: görev kapanınca ilgili sorun "Kapatıldı" olsun
+  const { data: task } = await supabase.from("geo_custom_task").select("site_id,title").eq("id", taskId).single();
+  if (task?.site_id && task?.title) {
+    const issueStatus = status === "done" ? "closed" : status === "doing" ? "tracked" : "open";
+    await supabase.from("audit_issue_status").upsert(
+      { site_id: task.site_id, issue_key: (task.title as string).slice(0, 300), status: issueStatus, updated_at: new Date().toISOString() },
+      { onConflict: "site_id,issue_key" }
+    );
+  }
   return { ok: true };
 }
 

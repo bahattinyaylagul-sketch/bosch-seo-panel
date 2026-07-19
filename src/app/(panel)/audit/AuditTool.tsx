@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useTransition, createContext, useContext } from "react";
-import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, translateReportStrings, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
+import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, translateReportStrings, getIssueStatuses, setIssueStatus, type IssueStatus, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { addCustomTasks } from "../geo-checklist/actions";
 import { useT, useLocale } from "@/components/LangProvider";
@@ -10,12 +10,17 @@ import { useT, useLocale } from "@/components/LangProvider";
 const AuditLContext = createContext<(s?: string | null) => string>((s) => s ?? "");
 const useL = () => useContext(AuditLContext);
 
+// Sorun durumları (Aktif/Takip Edilen/Kapatıldı) — sadece kayıtlı site raporunda aktif
+interface IssueCtx { siteId?: string; statusOf: (key: string) => IssueStatus; cycle: (key: string) => void; newKeys: Set<string> }
+const AuditIssueContext = createContext<IssueCtx>({ statusOf: () => "open", cycle: () => {}, newKeys: new Set() });
+const useIssue = () => useContext(AuditIssueContext);
+
 const GREEN = "#00884A";
 const AMBER = "#E88E00";
 const RED = "#ED0007";
 const BLUE = "#007BC0";
 
-type Filter = "all" | "fail" | "warn" | "pass";
+type Filter = "all" | "fail" | "warn" | "pass" | "info";
 
 function scoreHex(v: number) { return v >= 80 ? GREEN : v >= 50 ? AMBER : RED; }
 function healthHex(v: number) { return v >= 90 ? GREEN : v >= 70 ? BLUE : v >= 50 ? AMBER : RED; }
@@ -132,6 +137,8 @@ function Dot({ status }: { status: CheckStatus }) {
 // ── Sorun satırı (info satırı ayrı stil) ───────────────────────────────────
 function CheckRow({ c }: { c: Check }) {
   const L = useL();
+  const issue = useIssue();
+  const istat = issue.siteId && !c.info ? issue.statusOf(c.label) : null;
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -155,13 +162,17 @@ function CheckRow({ c }: { c: Check }) {
   }
 
   return (
-    <div className="border-t border-surface-border first:border-t-0">
+    <div className={`border-t border-surface-border first:border-t-0 ${istat === "closed" ? "opacity-55" : ""}`}>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted/50 transition-colors">
         <Dot status={c.status} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-ink font-medium">{L(c.label)}</div>
+          <div className={`text-sm text-ink font-medium ${istat === "closed" ? "line-through" : ""}`}>{L(c.label)}</div>
           <div className="text-xs text-ink-body break-words">{L(c.detail)}</div>
         </div>
+        {istat && (() => {
+          const cfg = istat === "closed" ? { t: "Kapatıldı", col: GREEN } : istat === "tracked" ? { t: "Takip Ediliyor", col: BLUE } : { t: "Aktif", col: AMBER };
+          return <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); issue.cycle(c.label); }} className="cursor-pointer rounded-bosch px-2 py-0.5 text-[11px] font-medium whitespace-nowrap" style={{ backgroundColor: cfg.col + "1a", color: cfg.col }} title="Durumu değiştir (Aktif → Takip → Kapatıldı)">{L(cfg.t)}</span>;
+        })()}
         {urls.length > 0 && <span className="text-[11px] text-ink-body bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{urls.length} {L("sayfa")}</span>}
         {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{L("girilen sayfa")}</span>}
         <SevBadge status={c.status} />
@@ -206,7 +217,7 @@ function GroupCard({ group, filter, refCb }: { group: CheckGroup; filter: Filter
   const err = scorable.filter((c) => c.status === "fail").length;
   const warn = scorable.filter((c) => c.status === "warn").length;
   const pass = scorable.filter((c) => c.status === "pass").length;
-  const visible = filter === "all" ? group.checks : group.checks.filter((c) => !c.info && c.status === filter);
+  const visible = filter === "all" ? group.checks : filter === "info" ? group.checks.filter((c) => c.info) : group.checks.filter((c) => !c.info && c.status === filter);
   if (!visible.length) return null;
   const isOpen = filter === "all" ? open : true;
   return (
@@ -664,7 +675,7 @@ export default function AuditTool() {
   const [translating, setTranslating] = useState(false);
   useEffect(() => {
     if (!res || locale === "tr") { setTmap({}); return; }
-    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı", "SAĞLIK SKORU", "KRİTİK", "UYARI", "BİLGİ", "BAŞARILI", "gözden geçir", "kontrol geçti"];
+    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı", "SAĞLIK SKORU", "KRİTİK", "UYARI", "BİLGİ", "BAŞARILI", "gözden geçir", "kontrol geçti", "Kapatıldı", "Takip Ediliyor", "Aktif"];
     const set = new Set<string>(FIXED);
     res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
     (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));
@@ -692,6 +703,32 @@ export default function AuditTool() {
     return () => { cancelled = true; };
   }, [res, locale]);
   const L = useMemo(() => (s?: string | null) => (s ? (tmap[s] ?? s) : (s ?? "")), [tmap]);
+
+  // ── Sorun durumları (Aktif/Takip/Kapatıldı) — kayıtlı site raporunda ──
+  const [issueStatuses, setIssueStatuses] = useState<Record<string, IssueStatus>>({});
+  useEffect(() => {
+    const sid = reportMeta?.siteId;
+    if (!res || !sid) { setIssueStatuses({}); return; }
+    let cancelled = false;
+    getIssueStatuses(sid).then((m) => { if (!cancelled) setIssueStatuses(m); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [res, reportMeta?.siteId]);
+  const issueCtx = useMemo<IssueCtx>(() => {
+    const sid = reportMeta?.siteId;
+    const orderS: IssueStatus[] = ["open", "tracked", "closed"];
+    return {
+      siteId: sid,
+      statusOf: (key: string) => issueStatuses[key] ?? "open",
+      cycle: (key: string) => {
+        if (!sid) return;
+        const cur = issueStatuses[key] ?? "open";
+        const next = orderS[(orderS.indexOf(cur) + 1) % orderS.length];
+        setIssueStatuses((p) => ({ ...p, [key]: next }));
+        setIssueStatus(sid, key, next).catch(() => {});
+      },
+      newKeys: new Set<string>(),
+    };
+  }, [issueStatuses, reportMeta?.siteId]);
 
   function run(e: React.FormEvent) {
     e.preventDefault();
@@ -755,6 +792,7 @@ export default function AuditTool() {
 
   return (
     <AuditLContext.Provider value={L}>
+    <AuditIssueContext.Provider value={issueCtx}>
     <div>
       {!res && !pending && (
         <>
@@ -813,7 +851,7 @@ export default function AuditTool() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 w-full">
                 <StatCol label={L("KRİTİK")} value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} ${L("URL etkilendi")}` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
                 <StatCol label={L("UYARI")} value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} ${L("URL etkilendi")}` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
-                <StatCol label={L("BİLGİ")} value={res.infoCount ?? 0} hex={BLUE} sub={L("gözden geçir")} />
+                <StatCol label={L("BİLGİ")} value={res.infoCount ?? 0} hex={BLUE} sub={L("gözden geçir")} active={filter === "info"} onClick={() => toggle("info")} />
                 <StatCol label={L("BAŞARILI")} value={res.counts.passes} hex={GREEN} sub={L("kontrol geçti")} active={filter === "pass"} onClick={() => toggle("pass")} />
               </div>
             </div>
@@ -943,6 +981,7 @@ export default function AuditTool() {
         </div>
       )}
     </div>
+    </AuditIssueContext.Provider>
     </AuditLContext.Provider>
   );
 }

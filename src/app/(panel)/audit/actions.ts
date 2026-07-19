@@ -5,6 +5,30 @@ import { createClient } from "@/lib/supabase/server";
 import { analyzeContentAI, analyzeSeoActionPlan, translateBatch, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
 import { getLocale } from "@/lib/i18n-server";
 
+// ── Denetim sorun durumları (Aktif/Takip Edilen/Kapatıldı) ──
+export type IssueStatus = "open" | "tracked" | "closed";
+export async function getIssueStatuses(siteId: string): Promise<Record<string, IssueStatus>> {
+  const profile = await getProfile();
+  if (!profile || !siteId) return {};
+  const supabase = createClient();
+  const { data } = await supabase.from("audit_issue_status").select("issue_key,status").eq("site_id", siteId);
+  const map: Record<string, IssueStatus> = {};
+  (data ?? []).forEach((r: any) => { map[r.issue_key] = r.status as IssueStatus; });
+  return map;
+}
+export async function setIssueStatus(siteId: string, issueKey: string, status: IssueStatus): Promise<{ ok: boolean; error?: string }> {
+  const profile = await getProfile();
+  if (!profile || profile.role === "viewer") return { ok: false, error: "Yetkisiz" };
+  if (!siteId || !issueKey) return { ok: false, error: "Eksik parametre" };
+  const supabase = createClient();
+  const { error } = await supabase.from("audit_issue_status").upsert(
+    { site_id: siteId, issue_key: issueKey.slice(0, 300), status, updated_at: new Date().toISOString() },
+    { onConflict: "site_id,issue_key" }
+  );
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 // Rapor deterministik metinlerini seçili dile çevir (görüntüleme anında, önbelleklenir)
 export async function translateReportStrings(texts: string[], locale: string): Promise<Record<string, string>> {
   const profile = await getProfile();

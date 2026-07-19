@@ -56,7 +56,7 @@ export interface Check {
   fix?: string;
   urls?: string[]; // etkilenen sayfalar
   info?: boolean;  // bilgi satırı — skora girmez
-  scope?: "site";  // site geneli kontrol (yoksa girilen sayfa)
+  scope?: "site";  // site geneli kontrol (yoksa anasayfa)
 }
 export interface CheckGroup {
   id: string;
@@ -160,7 +160,7 @@ const FIX: Record<string, string> = {
   "İçerik uzunluğu": "İçeriği en az 300+ kelimeye çıkararak konuyu kapsamlı işleyin.",
   "İç bağlantılar": "İlgili sayfalara bağlam içeren (contextual) iç bağlantılar ekleyin.",
   "Dil etiketi (html lang)": '<html lang="tr"> gibi bir dil etiketi tanımlayın.',
-  "hreflang (girilen sayfa)": "Diller/pazarlar arası hreflang etiketleri ekleyin — çok pazarlı yapı için kritik.",
+  "hreflang (anasayfa)": "Diller/pazarlar arası hreflang etiketleri ekleyin — çok pazarlı yapı için kritik.",
   "Mobil viewport": '<meta name=viewport content="width=device-width, initial-scale=1"> ekleyin.',
   "Alt metni kapsamı": "Alt metni olmayan görsellere kısa, açıklayıcı alt metni ekleyin.",
   "Modern format (WebP/AVIF)": "Görselleri WebP/AVIF formatında sunarak dosya boyutunu düşürün.",
@@ -183,7 +183,7 @@ const FIX: Record<string, string> = {
   "FCP": "Kritik CSS'i satır içi yapın, render-blocking kaynakları azaltın.",
   "TBT": "Uzun JavaScript görevlerini bölün, kullanılmayan JS'i kaldırın.",
   "Speed Index": "Sayfanın görünür kısmının daha erken çizilmesini sağlayın.",
-  "Kırık linkler (girilen sayfa)": "4xx/5xx dönen hedef bağlantıları düzeltin veya kaldırın; kullanıcı ve crawler deneyimini bozar.",
+  "Kırık linkler (anasayfa)": "4xx/5xx dönen hedef bağlantıları düzeltin veya kaldırın; kullanıcı ve crawler deneyimini bozar.",
   "Yönlendirme zinciri": "Girilen URL'yi tek adımda (301'siz) nihai adrese götürün; zincir crawl bütçesi ve hız kaybettirir.",
   "AI bot erişimi": "robots.txt'te AI botlarını (GPTBot, ClaudeBot, PerplexityBot) bilinçli engellemediyseniz Disallow kurallarını gözden geçirin.",
   "llms.txt": "Kök dizine llms.txt ekleyerek AI motorlarına içerik rehberi sunun (yeni, opsiyonel standart).",
@@ -684,7 +684,7 @@ function urlHygieneBad(pages: PageInfo[]): string[] {
   return bad;
 }
 
-// ── Grupları kur: girilen sayfa + site geneli birleşik ─────────────────────
+// ── Grupları kur: anasayfa + site geneli birleşik ─────────────────────
 interface BuildExtra {
   brokenLinks?: Check | null;
   redirectChain?: Check | null;
@@ -703,7 +703,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   const sitewide = N >= 2;
   const of = (pred: (p: PageInfo) => boolean) => P.filter(pred).map((p) => p.url);
   const isLive = (p: PageInfo) => p.status > 0 && p.status < 400;
-  const scopeTag = sitewide ? ` · ${N} sayfa` : " · girilen sayfa";
+  const scopeTag = sitewide ? ` · ${N} sayfa` : " · anasayfa";
   const tech: Check[] = [];
   const onpage: Check[] = [];
   const geo: Check[] = [];
@@ -711,12 +711,8 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   const mobile: Check[] = [];
   const perf: Check[] = [];
   // ═══ TEKNİK SEO & TARANABİLİRLİK ═══
-  if (sitewide) {
-    const partial = site!.partial ? ` · süre limitinden ${site!.totalFound} URL'nin ${N}'i` : "";
-    const scopeNote = site!.prefix ? ` · kapsam: ${site!.prefix}` : "";
-    tech.push({ label: "Taranan sayfalar", status: "pass", info: true, detail: `${N} sayfa tarandı${partial}${scopeNote} · limit ${CRAWL_LIMIT}`, urls: P.slice(0, URL_CAP).map((p) => p.url) });
-  }
-  tech.push({ label: "HTTP durumu (girilen sayfa)", status: page.status >= 200 && page.status < 300 ? "pass" : "fail", detail: `${page.status}` });
+  // (Taranan sayfa sayısı grup başlığında "· N sayfa" olarak zaten görünüyor — ayrı meta satırı yok)
+  tech.push({ label: "HTTP durumu (anasayfa)", status: page.status >= 200 && page.status < 300 ? "pass" : "fail", detail: `${page.status}` });
   if (sitewide) {
     // Yalnız gerçek HTTP hataları (404/410/5xx). status 0 = zaman aşımı/ağ (yanlış pozitif),
     // 401/403/429/999 = bot engelleme — bunları "kırık" saymayız.
@@ -755,7 +751,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   tech.push(soft404
     ? { label: "Soft 404", status: "fail", detail: "200 dönüyor ama içerik 'bulunamadı' sinyali veriyor" }
     : { label: "Soft 404", status: "pass", detail: "Soft 404 belirtisi yok" });
-  // İndekslenebilirlik + canonical + noindex — site geneli varsa oradan, yoksa girilen sayfadan
+  // İndekslenebilirlik + canonical + noindex — site geneli varsa oradan, yoksa anasayfadan
   if (sitewide) {
     tech.push(siteCheck("noindex sayfalar", of((p) => p.noindex), 0,
       "Dizine kapalı sayfa yok", (n) => `${n} sayfa dizine kapalı (noindex)`, FIX["İndekslenebilirlik"]!));
@@ -801,12 +797,12 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
         : { label: "İçerik uzunluğu", status: "fail", detail: `~${page.words} kelime (çok az)` });
   }
   onpage.push(h2 > 0
-    ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2 (girilen sayfa)` }
-    : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok (girilen sayfa)" });
+    ? { label: "Başlık hiyerarşisi (H2+)", status: "pass", detail: `${h2} adet H2 (anasayfa)` }
+    : { label: "Başlık hiyerarşisi (H2+)", status: "warn", detail: "Alt başlık (H2) yok (anasayfa)" });
   const tocLinks = count(/<a[^>]+href=["']#[\w:.-]+["']/gi);
-  onpage.push({ label: "İçindekiler (TOC)", status: tocLinks >= 3 ? "pass" : "warn", info: true, detail: tocLinks >= 3 ? `${tocLinks} sayfa-içi bağlantı (girilen sayfa)` : "Ham HTML'de sayfa-içi TOC yok — JS ile basılıyorsa AI crawler'lar görmez (girilen sayfa)" });
+  onpage.push({ label: "İçindekiler (TOC)", status: tocLinks >= 3 ? "pass" : "warn", info: true, detail: tocLinks >= 3 ? `${tocLinks} sayfa-içi bağlantı (anasayfa)` : "Ham HTML'de sayfa-içi TOC yok — JS ile basılıyorsa AI crawler'lar görmez (anasayfa)" });
   const tables = count(/<table[\s>]/gi); const lists = count(/<(ul|ol)[\s>]/gi);
-  onpage.push({ label: "Tablo & liste kullanımı", status: tables + lists > 0 ? "pass" : "warn", info: true, detail: `${tables} tablo, ${lists} liste (ham HTML · girilen sayfa)` });
+  onpage.push({ label: "Tablo & liste kullanımı", status: tables + lists > 0 ? "pass" : "warn", info: true, detail: `${tables} tablo, ${lists} liste (ham HTML · anasayfa)` });
   const hrefs = Array.from(html.matchAll(/<a\s[^>]*href=["']([^"'#]+)["']/gi)).map((m) => m[1]);
   let internal = 0, external = 0;
   for (const href of hrefs) {
@@ -821,8 +817,8 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     : { label: "Dil etiketi (html lang)", status: "warn", detail: "Tanımsız" });
   const hreflangN = count(/hreflang=["'][^"']+["']/gi);
   onpage.push(hreflangN > 0
-    ? { label: "hreflang (girilen sayfa)", status: "pass", detail: `${hreflangN} alternatif dil/pazar bağlantısı` }
-    : { label: "hreflang (girilen sayfa)", status: "warn", detail: "hreflang yok — pazarlar arası SEO zayıf" });
+    ? { label: "hreflang (anasayfa)", status: "pass", detail: `${hreflangN} alternatif dil/pazar bağlantısı` }
+    : { label: "hreflang (anasayfa)", status: "warn", detail: "hreflang yok — pazarlar arası SEO zayıf" });
   // Site geneli on-page bulguları — URL listeleriyle
   if (sitewide) {
     const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
@@ -924,7 +920,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     geo.push(siteCheck("Yapısal veri JSON-LD yok (site geneli)", of((p) => p.status > 0 && p.status < 400 && !p.jsonld), Math.floor(N / 2),
       "Tüm sayfalarda schema var", (n) => `${n} sayfanın ham HTML'inde JSON-LD yok — AI crawler'lar şemasız görüyor`, FIX["Yapısal veri (JSON-LD)"]!));
     geo.push(siteCheck("hreflang eksik (site geneli)", of((p) => p.status > 0 && p.status < 400 && p.hreflang === 0), Math.floor(N / 2),
-      "Sayfalarda hreflang tanımlı", (n) => `${n} sayfada hreflang yok — çok pazarlı yapı için kritik`, FIX["hreflang (girilen sayfa)"]!));
+      "Sayfalarda hreflang tanımlı", (n) => `${n} sayfada hreflang yok — çok pazarlı yapı için kritik`, FIX["hreflang (anasayfa)"]!));
   } else {
     geo.push(ldBlocks.length > 0
       ? { label: "Yapısal veri (JSON-LD)", status: "pass", detail: `${ldBlocks.length} blok${typeList.length ? " — " + typeList.slice(0, 6).join(", ") : ""}` }
@@ -987,8 +983,6 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     geo.push({ label: "Client-side rendering (CSR) riski", status: "pass", detail: "Kritik içerik ham HTML'de mevcut görünüyor" });
   }
   // ═══ PERFORMANS ═══
-  // Genel skor bilgi satırı olarak (metriklerle çifte sayım olmasın diye skora girmez)
-  perf.push({ label: "Performans skoru (Lighthouse)", status: scoreToStatus(lh.perfScore), info: true, detail: lh.perfScore == null ? "—" : `${Math.round(lh.perfScore * 100)} / 100` });
   perf.push(...lh.metrics.map((m) => ({ label: m.key, status: m.status, detail: m.value })));
   // CrUX gerçek kullanıcı INP — veri geldiyse normal Check
   if (lh.inpMs != null) {
@@ -1064,8 +1058,8 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
       : { label: "Boş bağlantı metni", status: "pass", detail: "Bağlantı metinleri erişilebilir" });
   const imgNoAltPage = count(/<img(?![^>]*\balt=)[^>]*>/gi);
   access.push(imgNoAltPage === 0
-    ? { label: "Görsel alt metni (erişilebilirlik)", status: "pass", detail: "Tüm görsellerde alt var (girilen sayfa)" }
-    : { label: "Görsel alt metni (erişilebilirlik)", status: "warn", detail: `${imgNoAltPage} görselde alt eksik (girilen sayfa)`, fix: "Bilgi taşıyan görsellere alt, dekoratiflere alt=\"\" ekleyin." });
+    ? { label: "Görsel alt metni (erişilebilirlik)", status: "pass", detail: "Tüm görsellerde alt var (anasayfa)" }
+    : { label: "Görsel alt metni (erişilebilirlik)", status: "warn", detail: `${imgNoAltPage} görselde alt eksik (anasayfa)`, fix: "Bilgi taşıyan görsellere alt, dekoratiflere alt=\"\" ekleyin." });
 
   // ═══ SITEMAP (Seoyen: Sitemap) ═══
   const sitemapChecks: Check[] = [];
@@ -1111,9 +1105,9 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     { id: "images", title: `Görseller${scopeTag}`, checks: sortChecks(images) },
     { id: "mobile", title: `Mobil Uyumluluk${scopeTag}`, checks: sortChecks(mobile) },
     { id: "geo", title: `GEO / Yapısal Veri${scopeTag}`, checks: sortChecks(geo) },
-    { id: "jscss", title: "JavaScript & CSS · girilen sayfa", checks: sortChecks(jscss) },
+    { id: "jscss", title: "JavaScript & CSS · anasayfa", checks: sortChecks(jscss) },
     { id: "sitemap", title: `Sitemap${scopeTag}`, checks: sortChecks(sitemapChecks) },
-    { id: "perf", title: "Performans (hız) · girilen sayfa", checks: sortChecks(perf) },
+    { id: "perf", title: "Performans (hız) · anasayfa", checks: sortChecks(perf) },
   ];
   return groups.filter((g) => g.checks.length > 0);
 }
@@ -1124,7 +1118,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   let url = (rawUrl || "").trim();
   if (!url) return { ok: false, error: "URL boş" };
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-  // 1) Mobil + Desktop PSI + girilen sayfa paralel (desktop hatası mobili bozmaz)
+  // 1) Mobil + Desktop PSI + anasayfa paralel (desktop hatası mobili bozmaz)
   const [lh, lhDesktop, page] = await Promise.all([
     fetchLighthouse(url, "mobile"),
     fetchLighthouse(url, "desktop"),
@@ -1142,7 +1136,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
     fetchLlmsTxt(page.origin).catch(() => false),
     checkHttpsRedirect(page.finalUrl).catch(() => null),
   ]);
-  // v3 türetmeler (girilen sayfanın html'inden — uydurma yok)
+  // v3 türetmeler (anasayfanın html'inden — uydurma yok)
   const serp = { title: page.title, desc: page.desc, url: page.finalUrl };
   const social = extractSocial(page.html);
   const headings = extractHeadings(page.html);
@@ -1152,7 +1146,7 @@ export async function auditSite(rawUrl: string): Promise<AuditResponse> {
   const crux = lh.crux;
   // Ek kontroller
   const brokenLinks: Check | null = linksRes.broken.length > 0
-    ? { label: "Kırık linkler (girilen sayfa)", status: "fail", detail: `${linksRes.broken.length} bağlantı 4xx/5xx döndürüyor`, urls: linksRes.broken.slice(0, URL_CAP), fix: FIX["Kırık linkler (girilen sayfa)"] }
+    ? { label: "Kırık linkler (anasayfa)", status: "fail", detail: `${linksRes.broken.length} bağlantı 4xx/5xx döndürüyor`, urls: linksRes.broken.slice(0, URL_CAP), fix: FIX["Kırık linkler (anasayfa)"] }
     : null;
   const chainUrls = redirectChain.map((s: { url: string; status: number }) => `${s.url} (${s.status})`);
   const hasLoop = redirectChain.length > 1 && new Set(redirectChain.map((s: { url: string; status: number }) => s.url)).size !== redirectChain.length;

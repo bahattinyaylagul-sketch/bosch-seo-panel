@@ -174,7 +174,7 @@ function CheckRow({ c }: { c: Check }) {
           return <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); issue.cycle(c.label); }} className="cursor-pointer rounded-bosch px-2 py-0.5 text-[11px] font-medium whitespace-nowrap" style={{ backgroundColor: cfg.col + "1a", color: cfg.col }} title="Durumu değiştir (Aktif → Takip → Kapatıldı)">{L(cfg.t)}</span>;
         })()}
         {urls.length > 0 && <span className="text-[11px] text-ink-body bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{urls.length} {L("sayfa")}</span>}
-        {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{L("girilen sayfa")}</span>}
+        {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{L("anasayfa")}</span>}
         <SevBadge status={c.status} />
         <span className="text-ink-body/50 text-xs w-4 text-center">{open ? "▾" : "▸"}</span>
       </button>
@@ -675,7 +675,7 @@ export default function AuditTool() {
   const [translating, setTranslating] = useState(false);
   useEffect(() => {
     if (!res || locale === "tr") { setTmap({}); return; }
-    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı", "SAĞLIK SKORU", "KRİTİK", "UYARI", "BİLGİ", "BAŞARILI", "gözden geçir", "kontrol geçti", "Kapatıldı", "Takip Ediliyor", "Aktif"];
+    const FIXED = ["anasayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı", "SAĞLIK SKORU", "KRİTİK", "UYARI", "BİLGİ", "BAŞARILI", "gözden geçir", "kontrol geçti", "Kapatıldı", "Takip Ediliyor", "Aktif"];
     const set = new Set<string>(FIXED);
     res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
     (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));

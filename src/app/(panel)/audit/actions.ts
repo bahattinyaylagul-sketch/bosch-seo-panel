@@ -347,6 +347,7 @@ interface PageInfo {
   imgTotal: number; imgNoAlt: number; words: number; hreflang: number; viewport: boolean;
   schemaOrg: boolean; schemaProduct: boolean; schemaBreadcrumb: boolean; schemaFaq: boolean;
   mixed: number; lang: boolean; landmark: boolean; scripts: number; css: number; emptyLinks: number;
+  modernImg: number; imgNoDim: number; lazyImg: number; themeColor: boolean; ogOk: boolean; twitter: boolean;
 }
 interface SiteCrawlResult { pages: PageInfo[]; totalFound: number; prefix: string; partial: boolean }
 async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlResult | null> {
@@ -407,7 +408,7 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const r = await safeFetchText(u, 5000);
         // Erişilemeyen (4xx/5xx/timeout) sayfaları da kaydet — bunlar da bulgu
         if (!r.ok) {
-          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false, schemaOrg: false, schemaProduct: false, schemaBreadcrumb: false, schemaFaq: false, mixed: 0, lang: false, landmark: false, scripts: 0, css: 0, emptyLinks: 0 });
+          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false, schemaOrg: false, schemaProduct: false, schemaBreadcrumb: false, schemaFaq: false, mixed: 0, lang: false, landmark: false, scripts: 0, css: 0, emptyLinks: 0, modernImg: 0, imgNoDim: 0, lazyImg: 0, themeColor: false, ogOk: false, twitter: false });
           continue;
         }
         const t = r.text;
@@ -437,7 +438,14 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const scripts = (t.match(/<script\b[^>]*\bsrc=/gi) || []).length;
         const css = (t.match(/<link[^>]+rel=["']stylesheet["']/gi) || []).length;
         const emptyLinks = (t.match(/<a\b[^>]*>\s*(?:<[^>]+>\s*)*<\/a>/gi) || []).filter((a) => !/aria-label=/i.test(a) && !/<img[^>]+alt=["'][^"']+["']/i.test(a)).length;
-        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport, schemaOrg, schemaProduct, schemaBreadcrumb, schemaFaq, mixed, lang, landmark, scripts, css, emptyLinks });
+        const imgTags = t.match(/<img\b[^>]*>/gi) || [];
+        const modernImg = imgTags.filter((g) => /\.(webp|avif)\b/i.test(g) || /type=["']image\/(webp|avif)/i.test(g)).length;
+        const imgNoDim = imgTags.filter((g) => !/\bwidth=/i.test(g) || !/\bheight=/i.test(g)).length;
+        const lazyImg = imgTags.filter((g) => /loading=["']lazy/i.test(g)).length;
+        const themeColor = /<meta[^>]+name=["']theme-color["']/i.test(t);
+        const ogOk = /property=["']og:title["']/i.test(t) && /property=["']og:description["']/i.test(t) && /property=["']og:image["']/i.test(t);
+        const twitter = /name=["']twitter:card["']/i.test(t);
+        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport, schemaOrg, schemaProduct, schemaBreadcrumb, schemaFaq, mixed, lang, landmark, scripts, css, emptyLinks, modernImg, imgNoDim, lazyImg, themeColor, ogOk, twitter });
       }
     }
     await Promise.all(Array.from({ length: CRAWL_POOL }, worker));
@@ -670,6 +678,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   const N = P.length;
   const sitewide = N >= 2;
   const of = (pred: (p: PageInfo) => boolean) => P.filter(pred).map((p) => p.url);
+  const isLive = (p: PageInfo) => p.status > 0 && p.status < 400;
   const scopeTag = sitewide ? ` · ${N} sayfa` : " · girilen sayfa";
   const tech: Check[] = [];
   const onpage: Check[] = [];
@@ -834,21 +843,30 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   const modernImg = count(/\.(webp|avif)\b/gi);
   const lazyImg = count(/loading=["']lazy["']/gi);
   const dimImg = count(/<img[^>]*\bwidth=["']?\d/gi);
-  images.push(imgTotal === 0
-    ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: "Görsel yok" }
-    : modernImg > 0
-      ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: `${modernImg} modern format görsel` }
-      : { label: "Modern format (WebP/AVIF)", status: "warn", detail: "WebP/AVIF kullanılmıyor — dosya boyutu büyük" });
-  images.push(imgTotal <= 3
-    ? { label: "Lazy loading", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : "Az görsel — gerek yok" }
-    : lazyImg > 0
-      ? { label: "Lazy loading", status: "pass", detail: `${lazyImg} görsel lazy yükleniyor` }
-      : { label: "Lazy loading", status: "warn", detail: "loading=lazy yok — ilk yük ağırlaşır" });
-  images.push(imgTotal === 0
-    ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsel yok" }
-    : dimImg / imgTotal > 0.6
-      ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsellerin çoğunda width/height var" }
-      : { label: "Boyut tanımı (CLS)", status: "warn", detail: "Çoğu görselde boyut yok — kayma (CLS) riski" });
+  if (sitewide) {
+    images.push(siteCheck("Modern görsel formatı yok (WebP/AVIF, site geneli)", of((p) => isLive(p) && p.imgTotal > 0 && p.modernImg === 0), Math.floor(N / 3),
+      "Modern görsel formatı yaygın", (n) => `${n} sayfada WebP/AVIF kullanılmıyor — dosya boyutu büyük`, "Görselleri WebP/AVIF formatında sunarak dosya boyutunu düşürün."));
+    images.push(siteCheck("Görsel boyutu tanımsız (CLS, site geneli)", of((p) => isLive(p) && p.imgTotal > 0 && p.imgNoDim / p.imgTotal > 0.6), Math.floor(N / 3),
+      "Görsellerde boyut tanımlı", (n) => `${n} sayfada görsellerin çoğunda width/height yok — kayma (CLS) riski`, "Görsellere width/height verin veya aspect-ratio kullanın; düzen kaymasını (CLS) önler."));
+    images.push(siteCheck("Lazy loading eksik (site geneli)", of((p) => isLive(p) && p.imgTotal > 3 && p.lazyImg === 0), Math.floor(N / 3),
+      "Görseller lazy yükleniyor", (n) => `${n} sayfada loading=lazy yok — ilk yük ağırlaşır`, "Ekran dışı görsellere loading=\"lazy\" ekleyin."));
+  } else {
+    images.push(imgTotal === 0
+      ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: "Görsel yok" }
+      : modernImg > 0
+        ? { label: "Modern format (WebP/AVIF)", status: "pass", detail: `${modernImg} modern format görsel` }
+        : { label: "Modern format (WebP/AVIF)", status: "warn", detail: "WebP/AVIF kullanılmıyor — dosya boyutu büyük" });
+    images.push(imgTotal <= 3
+      ? { label: "Lazy loading", status: "pass", detail: imgTotal === 0 ? "Görsel yok" : "Az görsel — gerek yok" }
+      : lazyImg > 0
+        ? { label: "Lazy loading", status: "pass", detail: `${lazyImg} görsel lazy yükleniyor` }
+        : { label: "Lazy loading", status: "warn", detail: "loading=lazy yok — ilk yük ağırlaşır" });
+    images.push(imgTotal === 0
+      ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsel yok" }
+      : dimImg / imgTotal > 0.6
+        ? { label: "Boyut tanımı (CLS)", status: "pass", detail: "Görsellerin çoğunda width/height var" }
+        : { label: "Boyut tanımı (CLS)", status: "warn", detail: "Çoğu görselde boyut yok — kayma (CLS) riski" });
+  }
   // ═══ MOBİL ═══
   const deviceWidth = has(/name=["']viewport["'][^>]*content=["'][^"']*width=device-width/i);
   if (sitewide) {
@@ -858,9 +876,12 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   mobile.push(deviceWidth
     ? { label: "Responsive viewport", status: "pass", detail: "width=device-width tanımlı" }
     : { label: "Responsive viewport", status: "fail", detail: "Responsive viewport yok — mobilde bozulur" });
-  mobile.push(has(/name=["']theme-color["']/i)
-    ? { label: "Tema rengi (theme-color)", status: "pass", detail: "Tanımlı" }
-    : { label: "Tema rengi (theme-color)", status: "warn", detail: "Yok" });
+  mobile.push(sitewide
+    ? siteCheck("Tema rengi eksik (theme-color, site geneli)", of((p) => isLive(p) && !p.themeColor), Math.floor(N / 2),
+        "Sayfalarda tema rengi tanımlı", (n) => `${n} sayfada theme-color meta yok`, "<meta name=\"theme-color\"> ekleyin (mobil tarayıcı çubuğu rengi).")
+    : has(/name=["']theme-color["']/i)
+      ? { label: "Tema rengi (theme-color)", status: "pass", detail: "Tanımlı" }
+      : { label: "Tema rengi (theme-color)", status: "warn", detail: "Yok" });
   mobile.push(has(/rel=["'](apple-touch-icon|icon)["']/i)
     ? { label: "Dokunmatik ikon / favicon", status: "pass", detail: "Tanımlı" }
     : { label: "Dokunmatik ikon / favicon", status: "warn", detail: "Yok" });
@@ -915,14 +936,21 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   }
   const ogTitle = has(/property=["']og:title["']/i), ogImage = has(/property=["']og:image["']/i), ogDesc = has(/property=["']og:description["']/i);
   const ogCount = [ogTitle, ogImage, ogDesc].filter(Boolean).length;
-  geo.push(ogCount === 3
-    ? { label: "Open Graph (paylaşım/AI önizleme)", status: "pass", detail: "og:title, og:description, og:image tam" }
-    : ogCount > 0
-      ? { label: "Open Graph (paylaşım/AI önizleme)", status: "warn", detail: "Eksik: " + [!ogTitle && "og:title", !ogDesc && "og:description", !ogImage && "og:image"].filter(Boolean).join(", ") }
-      : { label: "Open Graph (paylaşım/AI önizleme)", status: "fail", detail: "Open Graph etiketi yok" });
-  geo.push(has(/name=["']twitter:card["']/i)
-    ? { label: "Twitter/X kartı", status: "pass", detail: "Var" }
-    : { label: "Twitter/X kartı", status: "warn", detail: "Yok" });
+  if (sitewide) {
+    geo.push(siteCheck("Open Graph eksik (paylaşım/AI önizleme, site geneli)", of((p) => isLive(p) && !p.ogOk), Math.floor(N / 2),
+      "Sayfalarda Open Graph tam", (n) => `${n} sayfada og:title/description/image eksik`, FIX["Open Graph (paylaşım/AI önizleme)"]!));
+    geo.push(siteCheck("Twitter/X kartı eksik (site geneli)", of((p) => isLive(p) && !p.twitter), Math.floor(N * 0.7),
+      "Sayfalarda Twitter kartı var", (n) => `${n} sayfada twitter:card yok`, FIX["Twitter/X kartı"]!));
+  } else {
+    geo.push(ogCount === 3
+      ? { label: "Open Graph (paylaşım/AI önizleme)", status: "pass", detail: "og:title, og:description, og:image tam" }
+      : ogCount > 0
+        ? { label: "Open Graph (paylaşım/AI önizleme)", status: "warn", detail: "Eksik: " + [!ogTitle && "og:title", !ogDesc && "og:description", !ogImage && "og:image"].filter(Boolean).join(", ") }
+        : { label: "Open Graph (paylaşım/AI önizleme)", status: "fail", detail: "Open Graph etiketi yok" });
+    geo.push(has(/name=["']twitter:card["']/i)
+      ? { label: "Twitter/X kartı", status: "pass", detail: "Var" }
+      : { label: "Twitter/X kartı", status: "warn", detail: "Yok" });
+  }
   geo.push(page.words >= 600
     ? { label: "İçerik derinliği (AI için)", status: "pass", detail: `~${page.words} kelime — kapsamlı, alıntılanabilir` }
     : { label: "İçerik derinliği (AI için)", status: "warn", detail: `~${page.words} kelime — AI motorları için sığ olabilir` });

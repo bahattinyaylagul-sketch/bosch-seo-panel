@@ -2,8 +2,20 @@
 import { gunzipSync } from "node:zlib";
 import { getProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { analyzeContentAI, analyzeSeoActionPlan, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
+import { analyzeContentAI, analyzeSeoActionPlan, translateBatch, type AiAnalysis, type SeoActionPlan } from "@/lib/audit-ai";
 import { getLocale } from "@/lib/i18n-server";
+
+// Rapor deterministik metinlerini seçili dile çevir (görüntüleme anında, önbelleklenir)
+export async function translateReportStrings(texts: string[], locale: string): Promise<Record<string, string>> {
+  const profile = await getProfile();
+  if (!profile) return {};
+  const uniq = Array.from(new Set(texts.filter((t) => t && t.trim())));
+  if (!uniq.length) return {};
+  const out = await translateBatch(uniq, locale);
+  const map: Record<string, string> = {};
+  uniq.forEach((t, i) => { if (out[i] && out[i] !== t) map[t] = out[i]; });
+  return map;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // v2 MOTOR — Site geneli bulgular kategorilere dağıtıldı (Screaming Frog tarzı)
 // - Her kontrol etkilenen URL listesini taşır (URL_CAP ile sınırlı)

@@ -194,6 +194,51 @@ export async function analyzeContentAI(input: {
   };
 }
 
+// ── Toplu çeviri: deterministik rapor metinlerini seçili dile çevir ─────────
+// Sayılar/teknik terimler korunur; kısa etiketler ve detaylar çevrilir.
+export async function translateBatch(texts: string[], locale: string): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || !texts.length) return texts;
+  const loc = (locale || "tr").toLowerCase();
+  if (loc === "tr") return texts;
+  const LANG = langName(loc);
+  const client = new Anthropic({ apiKey });
+  const system = [
+    `Sen bir teknik SEO arayüzü için çevirmensin. Sana JSON dizisi içinde Türkçe kısa metinler (etiket, durum, kısa açıklama) verilecek.`,
+    `Her öğeyi ${LANG} diline çevir. Kurallar:`,
+    `- Sayıları, ölçü birimlerini (ms, KB, px), teknik terimleri ve özel adları (JSON-LD, hreflang, canonical, H1, H2, TTFB, CLS, INP, WebP, AVIF, Open Graph, Schema.org, GPTBot, ClaudeBot, Organization, Product, Offer, BreadcrumbList, FAQ, viewport, gzip, brotli, HSTS) OLDUĞU GİBİ bırak.`,
+    `- Dizideki öğe SAYISINI ve SIRASINI koru. Boş öğe varsa boş bırak.`,
+    `- SADECE şu JSON formatında yanıt ver: {"items":["...","..."]} — başka metin ekleme.`,
+  ].join("\n");
+  const tryModels = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)];
+  let raw = "";
+  for (const m of tryModels) {
+    try {
+      const msg = await client.messages.create({
+        model: m, max_tokens: 4000, temperature: 0,
+        system,
+        messages: [{ role: "user", content: JSON.stringify({ items: texts }) }],
+      });
+      raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+      if (raw) break;
+    } catch (e: any) {
+      const status = e?.status ?? e?.statusCode;
+      if (status === 404 || status === 400) continue;
+      return texts;
+    }
+  }
+  try {
+    let s = raw.trim();
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/); if (fence) s = fence[1].trim();
+    const a = s.indexOf("{"); const b = s.lastIndexOf("}"); if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
+    const j = JSON.parse(s);
+    if (Array.isArray(j.items) && j.items.length === texts.length) {
+      return j.items.map((x: any, i: number) => (typeof x === "string" && x.trim() ? x : texts[i]));
+    }
+  } catch { /* çeviri başarısızsa orijinali dön */ }
+  return texts;
+}
+
 // ── SEO Aksiyon Planı: deterministik bulguları TEK çağrıyla yorumla ─────────
 export interface SeoAction { title: string; why: string; priority: "yüksek" | "orta" | "düşük" }
 export interface SeoActionPlan { summary: string; actions: SeoAction[] }

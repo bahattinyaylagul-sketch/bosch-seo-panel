@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useTransition } from "react";
-import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
+import { useState, useEffect, useMemo, useRef, useTransition, createContext, useContext } from "react";
+import { auditSite, listAuditSites, addAuditSite, deleteAuditSite, runSiteScan, getScanHistory, getScanReport, getLatestScanReport, translateReportStrings, type AuditData, type Check, type CheckGroup, type CheckStatus, type AuditSite, type ScanDiff, type ScanRow } from "./actions";
 import type { ScoredDim } from "@/lib/audit-ai";
 import { addCustomTasks } from "../geo-checklist/actions";
-import { useT } from "@/components/LangProvider";
+import { useT, useLocale } from "@/components/LangProvider";
+
+// Rapor deterministik metinleri için çeviri sözlüğü (görüntüleme anında doldurulur)
+const AuditLContext = createContext<(s?: string | null) => string>((s) => s ?? "");
+const useL = () => useContext(AuditLContext);
 
 const GREEN = "#00884A";
 const AMBER = "#E88E00";
@@ -96,10 +100,11 @@ function BigStat({ label, value, hex, sub, active, onClick }: { label: string; v
 }
 
 function SevBadge({ status }: { status: CheckStatus }) {
+  const L = useL();
   const cfg = status === "fail" ? { t: "Hata", cls: "bg-bosch-red/10 text-bosch-red" }
     : status === "warn" ? { t: "Uyarı", cls: "bg-amber-500/10 text-amber-600" }
     : { t: "OK", cls: "bg-bosch-green/10 text-bosch-green" };
-  return <span className={`rounded-bosch px-2 py-0.5 text-[11px] font-medium ${cfg.cls}`}>{cfg.t}</span>;
+  return <span className={`rounded-bosch px-2 py-0.5 text-[11px] font-medium ${cfg.cls}`}>{L(cfg.t)}</span>;
 }
 function Dot({ status }: { status: CheckStatus }) {
   const c = status === "pass" ? "bg-bosch-green" : status === "warn" ? "bg-amber-500" : "bg-bosch-red";
@@ -108,6 +113,7 @@ function Dot({ status }: { status: CheckStatus }) {
 
 // ── Sorun satırı (info satırı ayrı stil) ───────────────────────────────────
 function CheckRow({ c }: { c: Check }) {
+  const L = useL();
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -123,8 +129,8 @@ function CheckRow({ c }: { c: Check }) {
       <div className="flex items-start gap-3 px-4 py-2.5 border-t border-surface-border first:border-t-0 opacity-70">
         <span className="mt-1 inline-block h-2 w-2 rounded-full bg-ink-body/40 shrink-0" />
         <div className="min-w-0">
-          <div className="text-sm text-ink-body font-medium">{c.label}</div>
-          <div className="text-xs text-ink-body/80 break-words">{c.detail}</div>
+          <div className="text-sm text-ink-body font-medium">{L(c.label)}</div>
+          <div className="text-xs text-ink-body/80 break-words">{L(c.detail)}</div>
         </div>
       </div>
     );
@@ -135,11 +141,11 @@ function CheckRow({ c }: { c: Check }) {
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-muted/50 transition-colors">
         <Dot status={c.status} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-ink font-medium">{c.label}</div>
-          <div className="text-xs text-ink-body break-words">{c.detail}</div>
+          <div className="text-sm text-ink font-medium">{L(c.label)}</div>
+          <div className="text-xs text-ink-body break-words">{L(c.detail)}</div>
         </div>
-        {urls.length > 0 && <span className="text-[11px] text-ink-body bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{urls.length} sayfa</span>}
-        {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">girilen sayfa</span>}
+        {urls.length > 0 && <span className="text-[11px] text-ink-body bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{urls.length} {L("sayfa")}</span>}
+        {c.scope !== "site" && urls.length === 0 && <span className="text-[11px] text-ink-body/70 bg-surface-muted rounded-bosch px-1.5 py-0.5 whitespace-nowrap">{L("girilen sayfa")}</span>}
         <SevBadge status={c.status} />
         <span className="text-ink-body/50 text-xs w-4 text-center">{open ? "▾" : "▸"}</span>
       </button>
@@ -147,15 +153,15 @@ function CheckRow({ c }: { c: Check }) {
         <div className="px-4 pb-3 pl-9 space-y-2">
           {c.status !== "pass" && (
             <div className="text-xs bg-surface-muted rounded-bosch px-3 py-2 border-l-2" style={{ borderColor: c.status === "fail" ? RED : AMBER }}>
-              <span className="font-medium text-ink">Öneri: </span>
-              <span className="text-ink-body">{c.fix ?? "Bu alanı iyileştirin."}</span>
+              <span className="font-medium text-ink">{L("Öneri")}: </span>
+              <span className="text-ink-body">{L(c.fix ?? "Bu alanı iyileştirin.")}</span>
             </div>
           )}
           {urls.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-medium text-ink-body">Etkilenen sayfalar ({urls.length})</span>
-                <button onClick={copyUrls} className="text-[11px] text-bosch-blue hover:underline">{copied ? "Kopyalandı ✓" : "URL'leri kopyala"}</button>
+                <span className="text-[11px] font-medium text-ink-body">{L("Etkilenen sayfalar")} ({urls.length})</span>
+                <button onClick={copyUrls} className="text-[11px] text-bosch-blue hover:underline">{copied ? L("Kopyalandı ✓") : L("URL'leri kopyala")}</button>
               </div>
               <div className="border border-surface-border rounded-bosch divide-y divide-surface-border">
                 {shown.map((u, i) => (
@@ -164,7 +170,7 @@ function CheckRow({ c }: { c: Check }) {
               </div>
               {urls.length > 5 && (
                 <button onClick={() => setShowAll((s) => !s)} className="mt-1.5 text-[11px] text-bosch-blue hover:underline">
-                  {showAll ? "Daha az göster" : `Tümünü göster (${urls.length})`}
+                  {showAll ? L("Daha az göster") : `${L("Tümünü göster")} (${urls.length})`}
                 </button>
               )}
             </div>
@@ -176,6 +182,7 @@ function CheckRow({ c }: { c: Check }) {
 }
 
 function GroupCard({ group, filter, refCb }: { group: CheckGroup; filter: Filter; refCb?: (el: HTMLDivElement | null) => void }) {
+  const L = useL();
   const [open, setOpen] = useState(true);
   const scorable = group.checks.filter((c) => !c.info);
   const err = scorable.filter((c) => c.status === "fail").length;
@@ -187,11 +194,11 @@ function GroupCard({ group, filter, refCb }: { group: CheckGroup; filter: Filter
   return (
     <div ref={refCb} className="border border-surface-border rounded-bosch overflow-hidden mb-4 scroll-mt-4">
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-surface-muted hover:bg-surface-border/40 transition-colors text-left">
-        <span className="text-sm font-semibold text-ink">{group.title}</span>
+        <span className="text-sm font-semibold text-ink">{L(group.title)}</span>
         <span className="flex items-center gap-2.5 text-xs">
-          {err > 0 && <span className="text-bosch-red font-medium">{err} hata</span>}
-          {warn > 0 && <span className="text-amber-600 font-medium">{warn} uyarı</span>}
-          <span className="text-bosch-green font-medium">{pass} ok</span>
+          {err > 0 && <span className="text-bosch-red font-medium">{err} {L("hata")}</span>}
+          {warn > 0 && <span className="text-amber-600 font-medium">{warn} {L("uyarı")}</span>}
+          <span className="text-bosch-green font-medium">{pass} {L("ok")}</span>
           {filter === "all" && <span className="text-ink-body/50 w-4 text-center">{open ? "▾" : "▸"}</span>}
         </span>
       </button>
@@ -423,26 +430,27 @@ function PerfBlock({ data }: { data: AuditData }) {
 
 // ── SEO Aksiyon Planı (AI, deterministik bulguları yorumlar) ───────────────
 function SeoPlan({ plan }: { plan: NonNullable<AuditData["seoPlan"]> }) {
+  const L = useL();
   const pr = (p: string) => p === "yüksek" ? { t: "Yüksek", c: RED } : p === "düşük" ? { t: "Düşük", c: GREEN } : { t: "Orta", c: AMBER };
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-1">
-        <h2 className="text-base font-semibold text-ink">SEO Aksiyon Planı</h2>
-        <span className="rounded-bosch bg-bosch-blue/10 text-bosch-blue text-[11px] px-2 py-0.5 font-medium">Claude ile</span>
+        <h2 className="text-base font-semibold text-ink">{L("SEO Aksiyon Planı")}</h2>
+        <span className="rounded-bosch bg-bosch-blue/10 text-bosch-blue text-[11px] px-2 py-0.5 font-medium">{L("Claude ile")}</span>
       </div>
-      <p className="text-xs text-ink-body mb-3">Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.</p>
+      <p className="text-xs text-ink-body mb-3">{L("Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.")}</p>
       <div className="border border-surface-border rounded-bosch p-4 mb-3 bg-surface-muted">
-        <p className="text-sm text-ink">{plan.summary}</p>
+        <p className="text-sm text-ink">{L(plan.summary)}</p>
       </div>
       <div className="border border-surface-border rounded-bosch overflow-hidden">
         {plan.actions.map((a, i) => {
           const p = pr(a.priority);
           return (
             <div key={i} className="flex items-start gap-3 px-4 py-3 border-t border-surface-border first:border-t-0">
-              <span className="rounded-bosch px-2 py-0.5 text-[11px] font-medium shrink-0 mt-0.5" style={{ backgroundColor: p.c + "1a", color: p.c }}>{p.t}</span>
+              <span className="rounded-bosch px-2 py-0.5 text-[11px] font-medium shrink-0 mt-0.5" style={{ backgroundColor: p.c + "1a", color: p.c }}>{L(p.t)}</span>
               <div className="min-w-0">
-                <div className="text-sm text-ink font-medium">{a.title}</div>
-                {a.why && <p className="text-xs text-ink-body break-words">{a.why}</p>}
+                <div className="text-sm text-ink font-medium">{L(a.title)}</div>
+                {a.why && <p className="text-xs text-ink-body break-words">{L(a.why)}</p>}
               </div>
             </div>
           );
@@ -632,6 +640,29 @@ export default function AuditTool() {
   const [reportMeta, setReportMeta] = useState<{ diff?: ScanDiff; savedAt?: string; siteId?: string } | null>(null);
   const handleReport = (d: AuditData, meta?: { diff?: ScanDiff; savedAt?: string; siteId?: string }) => { setRes(d); setReportMeta(meta ?? null); setFilter("all"); setError(null); typeof window !== "undefined" && window.scrollTo({ top: 0 }); };
 
+  // ── Deterministik rapor metinlerini seçili dile çevir (görüntüleme anında) ──
+  const locale = useLocale();
+  const [tmap, setTmap] = useState<Record<string, string>>({});
+  const [translating, setTranslating] = useState(false);
+  useEffect(() => {
+    if (!res || locale === "tr") { setTmap({}); return; }
+    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük"];
+    const set = new Set<string>(FIXED);
+    res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
+    (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));
+    if (res.seoPlan) { if (res.seoPlan.summary) set.add(res.seoPlan.summary); res.seoPlan.actions.forEach((a) => { if (a.title) set.add(a.title); if (a.why) set.add(a.why); }); }
+    if (res.aiError) set.add(res.aiError);
+    const texts = Array.from(set);
+    let cancelled = false;
+    setTranslating(true);
+    translateReportStrings(texts, locale)
+      .then((m) => { if (!cancelled) setTmap(m); })
+      .catch(() => { if (!cancelled) setTmap({}); })
+      .finally(() => { if (!cancelled) setTranslating(false); });
+    return () => { cancelled = true; };
+  }, [res, locale]);
+  const L = useMemo(() => (s?: string | null) => (s ? (tmap[s] ?? s) : (s ?? "")), [tmap]);
+
   function run(e: React.FormEvent) {
     e.preventDefault();
     setError(null); setRes(null); setReportMeta(null); setFilter("all");
@@ -693,6 +724,7 @@ export default function AuditTool() {
   const h1ok = h1Check ? h1Check.status === "pass" : null;
 
   return (
+    <AuditLContext.Provider value={L}>
     <div>
       {!res && !pending && (
         <>
@@ -795,7 +827,7 @@ export default function AuditTool() {
           {!res.ai && res.aiError && filter === "all" && (
             <div className="mt-8 rounded-bosch border border-amber-300 bg-amber-50 p-4">
               <div className="text-sm font-semibold text-ink mb-1">AI Görünürlük & GEO Analizi çalışmadı</div>
-              <p className="text-xs text-ink-body">{res.aiError}</p>
+              <p className="text-xs text-ink-body">{L(res.aiError)}</p>
             </div>
           )}
 
@@ -874,5 +906,6 @@ export default function AuditTool() {
         </div>
       )}
     </div>
+    </AuditLContext.Provider>
   );
 }

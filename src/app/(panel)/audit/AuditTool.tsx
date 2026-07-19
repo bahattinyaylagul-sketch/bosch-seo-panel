@@ -653,11 +653,23 @@ export default function AuditTool() {
     if (res.seoPlan) { if (res.seoPlan.summary) set.add(res.seoPlan.summary); res.seoPlan.actions.forEach((a) => { if (a.title) set.add(a.title); if (a.why) set.add(a.why); }); }
     if (res.aiError) set.add(res.aiError);
     const texts = Array.from(set);
+    // Önbellek: daha önce çevrilenleri anında göster; sadece yenileri çevir.
+    const cacheKey = `audit_tr_${locale}`;
+    let cache: Record<string, string> = {};
+    try { cache = JSON.parse(sessionStorage.getItem(cacheKey) || "{}"); } catch { cache = {}; }
+    setTmap(cache);
+    const missing = texts.filter((t) => !(t in cache));
+    if (missing.length === 0) return;
     let cancelled = false;
     setTranslating(true);
-    translateReportStrings(texts, locale)
-      .then((m) => { if (!cancelled) setTmap(m); })
-      .catch(() => { if (!cancelled) setTmap({}); })
+    translateReportStrings(missing, locale)
+      .then((m) => {
+        if (cancelled) return;
+        const merged = { ...cache, ...m };
+        setTmap(merged);
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(merged)); } catch {}
+      })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setTranslating(false); });
     return () => { cancelled = true; };
   }, [res, locale]);

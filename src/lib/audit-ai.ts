@@ -216,32 +216,45 @@ export async function translateBatch(texts: string[], locale: string): Promise<s
     `- SADECE şu JSON formatında yanıt ver: {"items":["...","..."]} — başka metin ekleme.`,
   ].join("\n");
   const tryModels = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)];
-  let raw = "";
-  for (const m of tryModels) {
+
+  // Tek bir parçayı çevir — hata/eksik olursa SADECE o parçanın eksik öğeleri orijinal kalır.
+  async function translateChunk(chunk: string[]): Promise<string[]> {
+    let raw = "";
+    for (const m of tryModels) {
+      try {
+        const msg = await client.messages.create({
+          model: m, max_tokens: 4000, temperature: 0,
+          system,
+          messages: [{ role: "user", content: JSON.stringify({ items: chunk }) }],
+        });
+        raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
+        if (raw) break;
+      } catch (e: any) {
+        const status = e?.status ?? e?.statusCode;
+        if (status === 404 || status === 400) continue;
+        return chunk; // API hatası → bu parça orijinal kalsın
+      }
+    }
     try {
-      const msg = await client.messages.create({
-        model: m, max_tokens: 4000, temperature: 0,
-        system,
-        messages: [{ role: "user", content: JSON.stringify({ items: texts }) }],
-      });
-      raw = msg.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-      if (raw) break;
-    } catch (e: any) {
-      const status = e?.status ?? e?.statusCode;
-      if (status === 404 || status === 400) continue;
-      return texts;
-    }
+      let s = raw.trim();
+      const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/); if (fence) s = fence[1].trim();
+      const a = s.indexOf("{"); const b = s.lastIndexOf("}"); if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
+      const j = JSON.parse(s);
+      const items: any[] = Array.isArray(j.items) ? j.items : [];
+      // TOLERANSLI: index bazında eşle; eksik/boş olan öğe orijinal kalır (hepsini patlatma).
+      return chunk.map((orig, i) => (typeof items[i] === "string" && items[i].trim() ? items[i] : orig));
+    } catch { return chunk; }
   }
-  try {
-    let s = raw.trim();
-    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/); if (fence) s = fence[1].trim();
-    const a = s.indexOf("{"); const b = s.lastIndexOf("}"); if (a !== -1 && b !== -1) s = s.slice(a, b + 1);
-    const j = JSON.parse(s);
-    if (Array.isArray(j.items) && j.items.length === texts.length) {
-      return j.items.map((x: any, i: number) => (typeof x === "string" && x.trim() ? x : texts[i]));
-    }
-  } catch { /* çeviri başarısızsa orijinali dön */ }
-  return texts;
+
+  // Parça parça çevir (token limiti/eksik-öğe patlamasını önler)
+  const SIZE = 40;
+  const out: string[] = [];
+  for (let i = 0; i < texts.length; i += SIZE) {
+    const chunk = texts.slice(i, i + SIZE);
+    const res = await translateChunk(chunk);
+    for (let k = 0; k < chunk.length; k++) out.push(res[k] ?? chunk[k]);
+  }
+  return out;
 }
 
 // ── SEO Aksiyon Planı: deterministik bulguları TEK çağrıyla yorumla ─────────

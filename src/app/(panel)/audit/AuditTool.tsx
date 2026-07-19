@@ -99,6 +99,24 @@ function BigStat({ label, value, hex, sub, active, onClick }: { label: string; v
   );
 }
 
+// Seoyen tarzı özet kartındaki tek sütun (Kritik/Uyarı/Bilgi/Başarılı)
+function StatCol({ label, value, hex, sub, active, onClick }: { label: string; value: number; hex: string; sub?: string; active?: boolean; onClick?: () => void }) {
+  const inner = (
+    <>
+      <div className="text-[11px] font-semibold tracking-wide" style={{ color: hex }}>{label}</div>
+      <div className="text-4xl font-semibold text-ink leading-none mt-1">{value}</div>
+      {sub && <div className="text-[11px] text-ink-body/70 mt-1.5">{sub}</div>}
+    </>
+  );
+  if (!onClick) return <div className="text-center px-2 py-2">{inner}</div>;
+  return (
+    <button onClick={onClick} className={`text-center px-2 py-2 rounded-bosch transition-colors ${active ? "ring-2" : "hover:bg-surface-muted"}`}
+      style={active ? ({ ["--tw-ring-color" as any]: hex }) : {}}>
+      {inner}
+    </button>
+  );
+}
+
 function SevBadge({ status }: { status: CheckStatus }) {
   const L = useL();
   const cfg = status === "fail" ? { t: "Hata", cls: "bg-bosch-red/10 text-bosch-red" }
@@ -646,7 +664,7 @@ export default function AuditTool() {
   const [translating, setTranslating] = useState(false);
   useEffect(() => {
     if (!res || locale === "tr") { setTmap({}); return; }
-    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı"];
+    const FIXED = ["girilen sayfa", "sayfa", "Öneri", "Bu alanı iyileştirin.", "Etkilenen sayfalar", "URL'leri kopyala", "Kopyalandı ✓", "Daha az göster", "Tümünü göster", "Hata", "Uyarı", "OK", "hata", "uyarı", "ok", "SEO Aksiyon Planı", "Claude ile", "Denetim bulguları (gerçek sayılar) yapay zekâ ile yorumlanıp öncelik sırasına konuldu.", "Yüksek", "Orta", "Düşük", "Sitelere dön", "CSV dışa aktar", "Kayıtlı rapor", "Site Sağlığı", "Hedef", "URL etkilendi", "Tümünü göster", "AI Görünürlük & GEO Analizi çalışmadı", "SAĞLIK SKORU", "KRİTİK", "UYARI", "BİLGİ", "BAŞARILI", "gözden geçir", "kontrol geçti"];
     const set = new Set<string>(FIXED);
     res.groups.forEach((g) => { if (g.title) set.add(g.title); g.checks.forEach((c) => { if (c.label) set.add(c.label); if (c.detail) set.add(c.detail); if (c.fix) set.add(c.fix); }); });
     (res.scores ?? []).forEach((s: any) => s?.label && set.add(s.label));
@@ -784,14 +802,21 @@ export default function AuditTool() {
           {filter === "all" && <ExportToChecklist data={res} siteId={reportMeta?.siteId} />}
 
           {/* ── DASHBOARD: sağlık + sayaçlar ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-            <div className="border border-surface-border rounded-bosch p-6 min-h-[168px] flex flex-col items-center justify-center text-center">
-              <div className="text-sm font-semibold text-ink mb-1">{L("Site Sağlığı")}</div>
-              <HalfGauge value={res.health} hex={healthHex(res.health)} />
-              <div className="text-xs text-ink-body mt-1">{L("Hedef")}: 90+</div>
+          <div className="border border-surface-border rounded-bosch p-5 sm:p-6 mb-4">
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <div className="flex flex-col items-center shrink-0">
+                <HalfGauge value={res.health} hex={healthHex(res.health)} />
+                <div className="text-[11px] font-semibold tracking-wide text-ink-body mt-1">{L("SAĞLIK SKORU")}</div>
+                <div className="text-[11px] text-ink-body/70">{L("Hedef")}: 90+</div>
+              </div>
+              <div className="h-px w-full md:h-24 md:w-px bg-surface-border shrink-0" />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 w-full">
+                <StatCol label={L("KRİTİK")} value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} ${L("URL etkilendi")}` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
+                <StatCol label={L("UYARI")} value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} ${L("URL etkilendi")}` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
+                <StatCol label={L("BİLGİ")} value={res.infoCount ?? 0} hex={BLUE} sub={L("gözden geçir")} />
+                <StatCol label={L("BAŞARILI")} value={res.counts.passes} hex={GREEN} sub={L("kontrol geçti")} active={filter === "pass"} onClick={() => toggle("pass")} />
+              </div>
             </div>
-            <BigStat label={L("Hata")} value={res.counts.errors} hex={RED} sub={affected.fail > 0 ? `${affected.fail} ${L("URL etkilendi")}` : undefined} active={filter === "fail"} onClick={() => toggle("fail")} />
-            <BigStat label={L("Uyarı")} value={res.counts.warnings} hex={AMBER} sub={affected.warn > 0 ? `${affected.warn} ${L("URL etkilendi")}` : undefined} active={filter === "warn"} onClick={() => toggle("warn")} />
           </div>
           {filter !== "all" && <button onClick={() => setFilter("all")} className="text-xs text-bosch-blue underline font-medium mb-4">← {L("Tümünü göster")}</button>}
 

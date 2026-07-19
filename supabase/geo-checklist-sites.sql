@@ -17,3 +17,7 @@ alter table public.geo_custom_task
   alter column market_id drop not null;
 
 create index if not exists geo_custom_task_site_idx on public.geo_custom_task (site_id);
+
+-- 4) Durum/not artık bu satırda güncellendiği için UPDATE RLS izni gerekli
+drop policy if exists "geo_custom_task_update" on public.geo_custom_task;
+create policy "geo_custom_task_update" on public.geo_custom_task for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

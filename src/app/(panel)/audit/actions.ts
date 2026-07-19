@@ -346,6 +346,7 @@ interface PageInfo {
   h1: number; jsonld: boolean; canonical: boolean; noindex: boolean;
   imgTotal: number; imgNoAlt: number; words: number; hreflang: number; viewport: boolean;
   schemaOrg: boolean; schemaProduct: boolean; schemaBreadcrumb: boolean; schemaFaq: boolean;
+  mixed: number; lang: boolean; landmark: boolean; scripts: number; css: number; emptyLinks: number;
 }
 interface SiteCrawlResult { pages: PageInfo[]; totalFound: number; prefix: string; partial: boolean }
 async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlResult | null> {
@@ -406,7 +407,7 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const r = await safeFetchText(u, 5000);
         // Erişilemeyen (4xx/5xx/timeout) sayfaları da kaydet — bunlar da bulgu
         if (!r.ok) {
-          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false, schemaOrg: false, schemaProduct: false, schemaBreadcrumb: false, schemaFaq: false });
+          pages.push({ url: u, status: r.status, redirected: false, title: null, desc: null, titleLen: 0, descLen: 0, h1: 0, jsonld: false, canonical: false, noindex: false, imgTotal: 0, imgNoAlt: 0, words: 0, hreflang: 0, viewport: false, schemaOrg: false, schemaProduct: false, schemaBreadcrumb: false, schemaFaq: false, mixed: 0, lang: false, landmark: false, scripts: 0, css: 0, emptyLinks: 0 });
           continue;
         }
         const t = r.text;
@@ -428,7 +429,15 @@ async function siteCrawl(origin: string, scopeUrl: string): Promise<SiteCrawlRes
         const schemaFaq = /"@type"\s*:\s*"?[^"]*(FAQPage|QAPage|Question)/i.test(t);
         const body = t.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
         const words = body ? body.split(" ").length : 0;
-        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport, schemaOrg, schemaProduct, schemaBreadcrumb, schemaFaq });
+        // Site geneli yeni sinyaller (HTML'den türetilir)
+        const isHttpsPage = /^https:/i.test(r.finalUrl);
+        const mixed = isHttpsPage ? new Set((t.match(/(?:src|href)=["']http:\/\/[^"']+/gi) || []).map((s) => s.replace(/^[^"']*["']/, "")).filter((x) => !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(x))).size : 0;
+        const lang = /<html[^>]+\blang=/i.test(t);
+        const landmark = /<main\b|<nav\b|role=["'](?:main|navigation|banner|contentinfo)["']/i.test(t);
+        const scripts = (t.match(/<script\b[^>]*\bsrc=/gi) || []).length;
+        const css = (t.match(/<link[^>]+rel=["']stylesheet["']/gi) || []).length;
+        const emptyLinks = (t.match(/<a\b[^>]*>\s*(?:<[^>]+>\s*)*<\/a>/gi) || []).filter((a) => !/aria-label=/i.test(a) && !/<img[^>]+alt=["'][^"']+["']/i.test(a)).length;
+        pages.push({ url: u, status: r.status, redirected, title, desc, titleLen: title?.length ?? 0, descLen: desc?.length ?? 0, h1, jsonld, canonical, noindex, imgTotal, imgNoAlt, words, hreflang, viewport, schemaOrg, schemaProduct, schemaBreadcrumb, schemaFaq, mixed, lang, landmark, scripts, css, emptyLinks });
       }
     }
     await Promise.all(Array.from({ length: CRAWL_POOL }, worker));
@@ -946,14 +955,20 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     tech.push(siteCheck("URL hijyeni (site geneli)", badUrls, 10,
       "URL yapıları temiz", (n) => `${n} URL uzun/büyük harf/underscore/derin`, FIX["URL hijyeni (site geneli)"]!));
   }
+  // Site geneli kontroller için canlı-sayfa yardımcısı (bu kapsamda erişilebilir)
+  const livePage = (p: PageInfo) => p.status > 0 && p.status < 400;
   // ═══ GÜVENLİK (Seoyen: HTTPS & Güvenlik) ═══
   const security: Check[] = [];
   const isHttps = page.finalUrl.startsWith("https://");
   const mixed = isHttps ? Array.from(new Set((html.match(/(?:src|href)=["']http:\/\/[^"']+/gi) || [])
     .map((s) => s.replace(/^[^"']*["']/, "")).filter((u) => !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(u)))) : [];
-  security.push(mixed.length > 0
-    ? { label: "Karışık içerik (mixed content)", status: "warn", detail: `${mixed.length} kaynak http:// ile yükleniyor (HTTPS sayfada)`, urls: mixed.slice(0, URL_CAP), fix: "Tüm görsel/script/stil kaynaklarını https:// ile yükleyin; tarayıcı aksi halde engelleyebilir." }
-    : { label: "Karışık içerik (mixed content)", status: "pass", detail: isHttps ? "Karışık içerik yok" : "Site HTTPS değil" });
+  security.push(sitewide
+    ? siteCheck("Karışık içerik (mixed content, site geneli)", of((p) => livePage(p) && p.mixed > 0), 0,
+        "Karışık içerik yok", (n) => `${n} sayfada http:// kaynak yükleniyor (HTTPS sayfada)`,
+        "Tüm görsel/script/stil kaynaklarını https:// ile yükleyin; tarayıcı aksi halde engelleyebilir.")
+    : mixed.length > 0
+      ? { label: "Karışık içerik (mixed content)", status: "warn", detail: `${mixed.length} kaynak http:// ile yükleniyor (HTTPS sayfada)`, urls: mixed.slice(0, URL_CAP), fix: "Tüm görsel/script/stil kaynaklarını https:// ile yükleyin." }
+      : { label: "Karışık içerik (mixed content)", status: "pass", detail: isHttps ? "Karışık içerik yok" : "Site HTTPS değil" });
   security.push(h("content-security-policy")
     ? { label: "Content-Security-Policy (CSP)", status: "pass", detail: "Tanımlı" }
     : { label: "Content-Security-Policy (CSP)", status: "warn", detail: "Yok — XSS/enjeksiyon koruması zayıf", fix: "Content-Security-Policy başlığı ekleyin." });
@@ -966,9 +981,13 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
 
   // ═══ ERİŞİLEBİLİRLİK (Seoyen: Erişilebilirlik) ═══
   const access: Check[] = [];
-  access.push(has(/<html[^>]+\blang=/i)
-    ? { label: "Dil etiketi (html lang)", status: "pass", detail: "Tanımlı" }
-    : { label: "Dil etiketi (html lang)", status: "warn", detail: "Tanımsız — ekran okuyucular dili bilemez", fix: "<html lang=\"tr\"> ekleyin." });
+  access.push(sitewide
+    ? siteCheck("Dil etiketi eksik (html lang, site geneli)", of((p) => livePage(p) && !p.lang), Math.floor(N / 3),
+        "Tüm sayfalarda html lang tanımlı", (n) => `${n} sayfada <html lang> eksik — ekran okuyucular dili bilemez`,
+        "Her sayfada <html lang=\"tr\"> (veya ilgili dil) tanımlayın.")
+    : has(/<html[^>]+\blang=/i)
+      ? { label: "Dil etiketi (html lang)", status: "pass", detail: "Tanımlı" }
+      : { label: "Dil etiketi (html lang)", status: "warn", detail: "Tanımsız — ekran okuyucular dili bilemez", fix: "<html lang=\"tr\"> ekleyin." });
   const inputCount = count(/<input\b(?![^>]*type=["'](?:hidden|submit|button|image|reset)["'])[^>]*>/gi) + count(/<textarea\b/gi) + count(/<select\b/gi);
   const labeledApprox = count(/\baria-label=|\baria-labelledby=|<label\b/gi);
   access.push(inputCount === 0
@@ -976,13 +995,21 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
     : labeledApprox >= inputCount
       ? { label: "Form etiketleri", status: "pass", detail: `${inputCount} form alanı etiketli görünüyor` }
       : { label: "Form etiketleri", status: "warn", detail: `${inputCount} form alanı var, ${labeledApprox} label/aria-label tespit edildi — bazıları etiketsiz olabilir`, fix: "Her input/select/textarea için <label> veya aria-label ekleyin." });
-  access.push(has(/<main\b|<nav\b|role=["'](?:main|navigation|banner|contentinfo)["']/i)
-    ? { label: "Semantik bölümler / ARIA landmark", status: "pass", detail: "main/nav/landmark mevcut" }
-    : { label: "Semantik bölümler / ARIA landmark", status: "warn", detail: "Semantik bölüm (main/nav/header/footer) yok", fix: "İçeriği <header>, <nav>, <main>, <footer> ile sarın." });
+  access.push(sitewide
+    ? siteCheck("Semantik bölüm / ARIA landmark eksik (site geneli)", of((p) => livePage(p) && !p.landmark), Math.floor(N / 3),
+        "Sayfalarda semantik bölümler mevcut", (n) => `${n} sayfada semantik bölüm (main/nav) yok`,
+        "İçeriği <header>, <nav>, <main>, <footer> ile sarın.")
+    : has(/<main\b|<nav\b|role=["'](?:main|navigation|banner|contentinfo)["']/i)
+      ? { label: "Semantik bölümler / ARIA landmark", status: "pass", detail: "main/nav/landmark mevcut" }
+      : { label: "Semantik bölümler / ARIA landmark", status: "warn", detail: "Semantik bölüm yok", fix: "İçeriği <header>, <nav>, <main>, <footer> ile sarın." });
   const emptyLinks = (html.match(/<a\b[^>]*>\s*(?:<[^>]+>\s*)*<\/a>/gi) || []).filter((a) => !/aria-label=/i.test(a) && !/<img[^>]+alt=["'][^"']+["']/i.test(a)).length;
-  access.push(emptyLinks > 0
-    ? { label: "Boş bağlantı metni", status: "warn", detail: `${emptyLinks} bağlantının erişilebilir metni yok — ekran okuyucular okuyamaz`, fix: "Bağlantıya görünür metin, aria-label veya alt'lı görsel ekleyin." }
-    : { label: "Boş bağlantı metni", status: "pass", detail: "Bağlantı metinleri erişilebilir" });
+  access.push(sitewide
+    ? siteCheck("Boş bağlantı metni (site geneli)", of((p) => livePage(p) && p.emptyLinks > 0), Math.floor(N / 3),
+        "Bağlantı metinleri erişilebilir", (n) => `${n} sayfada erişilebilir metni olmayan bağlantı var`,
+        "Bağlantıya görünür metin, aria-label veya alt'lı görsel ekleyin.")
+    : emptyLinks > 0
+      ? { label: "Boş bağlantı metni", status: "warn", detail: `${emptyLinks} bağlantının erişilebilir metni yok`, fix: "Bağlantıya görünür metin/aria-label ekleyin." }
+      : { label: "Boş bağlantı metni", status: "pass", detail: "Bağlantı metinleri erişilebilir" });
   const imgNoAltPage = count(/<img(?![^>]*\balt=)[^>]*>/gi);
   access.push(imgNoAltPage === 0
     ? { label: "Görsel alt metni (erişilebilirlik)", status: "pass", detail: "Tüm görsellerde alt var (girilen sayfa)" }
@@ -1005,9 +1032,18 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   const scriptCount = count(/<script\b[^>]*\bsrc=/gi);
   const inlineScript = count(/<script\b(?![^>]*\bsrc=)[^>]*>/gi);
   const cssCount = count(/<link[^>]+rel=["']stylesheet["']/gi);
-  jscss.push({ label: "Harici script sayısı", status: scriptCount > 20 ? "warn" : "pass", info: scriptCount <= 20, detail: `${scriptCount} harici <script>${scriptCount > 20 ? " (fazla — HTTP istekleri artıyor)" : ""}` });
-  jscss.push({ label: "Satır içi (inline) script", status: inlineScript > 15 ? "warn" : "pass", info: inlineScript <= 15, detail: `${inlineScript} inline <script>` });
-  jscss.push({ label: "Harici CSS sayısı", status: cssCount > 8 ? "warn" : "pass", info: cssCount <= 8, detail: `${cssCount} stylesheet${cssCount > 8 ? " (fazla — render-blocking riski)" : ""}` });
+  if (sitewide) {
+    jscss.push(siteCheck("Aşırı script yükü (>20, site geneli)", of((p) => livePage(p) && p.scripts > 20), Math.floor(N / 4),
+      "Sayfalarda script sayısı makul", (n) => `${n} sayfada 20'den fazla harici script var (HTTP istekleri artıyor)`,
+      "Script sayısını azaltın, birleştirin (bundle) ve defer/async kullanın."));
+    jscss.push(siteCheck("Fazla harici CSS (>8, site geneli)", of((p) => livePage(p) && p.css > 8), Math.floor(N / 4),
+      "Sayfalarda CSS dosya sayısı makul", (n) => `${n} sayfada 8'den fazla stylesheet var (render-blocking riski)`,
+      "CSS dosyalarını birleştirin ve kritik CSS'i inline verin."));
+  } else {
+    jscss.push({ label: "Harici script sayısı", status: scriptCount > 20 ? "warn" : "pass", info: scriptCount <= 20, detail: `${scriptCount} harici <script>${scriptCount > 20 ? " (fazla)" : ""}` });
+    jscss.push({ label: "Satır içi (inline) script", status: inlineScript > 15 ? "warn" : "pass", info: inlineScript <= 15, detail: `${inlineScript} inline <script>` });
+    jscss.push({ label: "Harici CSS sayısı", status: cssCount > 8 ? "warn" : "pass", info: cssCount <= 8, detail: `${cssCount} stylesheet${cssCount > 8 ? " (fazla)" : ""}` });
+  }
   // Lighthouse fırsatlarından render-blocking / kullanılmayan kaynak sinyali
   const rb = lh.opportunities.find((o) => /render-blocking|kullanılmayan|unused|minif/i.test(o.title));
   if (rb) jscss.push({ label: "Render-blocking / kullanılmayan kaynaklar", status: "warn", detail: `${rb.title} — ${rb.value}`, fix: "Kritik olmayan JS/CSS'i erteleyin (defer/async), kullanılmayan kodu ayıklayın, minify edin." });

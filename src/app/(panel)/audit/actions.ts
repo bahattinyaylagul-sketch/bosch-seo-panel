@@ -558,9 +558,10 @@ async function fetchLinksList(html: string, base: string, host: string): Promise
     return { ...it, status: h.status };
   });
   // Yanlış pozitifi önle: dış siteler (LinkedIn 999, Medium 403 vb.) botları engeller.
-  // Sadece 5xx her iki tarafta; 404/410 yalnızca İÇ linklerde kırık sayılır. 401/403/405/429/999 = engelleme, kırık değil.
+  // Sadece GERÇEK 5xx (500–599) her iki tarafta; 404/410 yalnızca İÇ linklerde kırık sayılır.
+  // 401/403/405/429/999 = engelleme, kırık DEĞİL (999 > 599 olduğu için aralık dışı).
   const broken = list
-    .filter((r) => r.status != null && (r.status >= 500 || ((r.status === 404 || r.status === 410) && r.type === "internal")))
+    .filter((r) => r.status != null && ((r.status >= 500 && r.status < 600) || ((r.status === 404 || r.status === 410) && r.type === "internal")))
     .map((r) => r.href);
   return { list, broken };
 }
@@ -677,7 +678,7 @@ function buildGroups(page: EnteredPage, site: SiteCrawlResult | null, lh: LhOk, 
   if (sitewide) {
     // Yalnız gerçek HTTP hataları (404/410/5xx). status 0 = zaman aşımı/ağ (yanlış pozitif),
     // 401/403/429/999 = bot engelleme — bunları "kırık" saymayız.
-    tech.push(siteCheck("Erişilemeyen sayfalar (4xx/5xx)", of((p) => p.status === 404 || p.status === 410 || p.status >= 500), 0,
+    tech.push(siteCheck("Erişilemeyen sayfalar (4xx/5xx)", of((p) => p.status === 404 || p.status === 410 || (p.status >= 500 && p.status < 600)), 0,
       "Tüm sayfalar erişilebilir", (n) => `${n} sayfa 404/410/5xx döndürüyor`,
       "Sitemap'te ölü URL bırakmayın; 404/500 dönen sayfaları düzeltin veya sitemap'ten çıkarın."));
     tech.push(siteCheck("Yönlendirilen sitemap URL'leri (3xx)", of((p) => p.redirected), Math.max(5, Math.floor(N / 10)),

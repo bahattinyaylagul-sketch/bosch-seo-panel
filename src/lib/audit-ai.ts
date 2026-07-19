@@ -150,20 +150,19 @@ export async function analyzeContentAI(input: {
     return null;
   }
 
-  // Şema-uyum guard'ı: zorunlu alanlar yoksa kısmi/uydurma nesne kurma, null dön
-  if (!j || typeof j !== "object" || typeof j.overall !== "number" ||
-      j.contentQuality == null || j.eeat == null || j.aiVisibility == null || j.geo == null) {
+  // Toleranslı guard: en az bir boyut objesi ya da overall varsa raporu kur.
+  // (Model bazen alan adlarını/iç içe yapıyı biraz farklı döndürebiliyor.)
+  const cq = j?.contentQuality ?? j?.content_quality ?? {};
+  const ee = j?.eeat ?? j?.eeAt ?? j?.EEAT ?? {};
+  const av = j?.aiVisibility ?? j?.ai_visibility ?? {};
+  const geo = j?.geo ?? j?.GEO ?? {};
+  const sectionHasData = [cq, ee, av, geo].some((x) => x && typeof x === "object" && Object.keys(x).length > 0);
+  if (!j || typeof j !== "object" || (!sectionHasData && typeof j.overall !== "number")) {
     if (diag) diag.error = "AI yanıtı beklenen şemada gelmedi.";
     return null;
   }
 
-  const cq = j.contentQuality ?? {};
-  const ee = j.eeat ?? {};
-  const av = j.aiVisibility ?? {};
-  const geo = j.geo ?? {};
-
-  return {
-    overall: clamp(j.overall),
+  const built = {
     summary: str(j.summary).slice(0, 400),
     contentQuality: [
       dim("searchIntent", "Arama niyeti uyumu", cq.searchIntent),
@@ -192,6 +191,12 @@ export async function analyzeContentAI(input: {
     entities: Array.isArray(j.entities) ? j.entities.filter((x: any) => typeof x === "string").slice(0, 10) : [],
     missingEntities: Array.isArray(j.missingEntities) ? j.missingEntities.filter((x: any) => typeof x === "string").slice(0, 8) : [],
   };
+
+  // overall: model verdiyse onu kullan, yoksa tüm boyut skorlarının ortalamasından hesapla
+  const allDims = [...built.contentQuality, ...built.eeat, ...built.aiVisibility, ...built.geo];
+  const avg = allDims.length ? Math.round(allDims.reduce((s, d) => s + d.score, 0) / allDims.length) : 0;
+  const overall = typeof j.overall === "number" ? clamp(j.overall) : (Number.isFinite(Number(j.overall)) ? clamp(j.overall) : avg);
+  return { overall, ...built };
 }
 
 // ── Toplu çeviri: deterministik rapor metinlerini seçili dile çevir ─────────
